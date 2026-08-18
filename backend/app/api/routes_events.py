@@ -89,14 +89,14 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
     if audio_raw is None or len(audio_raw) == 0:
         raise HTTPException(status_code=400, detail="Không có dữ liệu âm thanh để lưu")
 
-    # 1. Trích xuất cửa sổ 250ms (4000 samples) quanh vùng có biên độ lớn nhất
+    # 1. Trích xuất cửa sổ 500ms (8000 samples) chứa trọn vẹn cả 2 tiếng vỗ nhầm
     sr = settings.audio.sample_rate
-    clip_samples = int(sr * 0.25)
+    clip_samples = int(sr * 0.50)
     
     if len(audio_raw) > clip_samples:
         peak_idx = int(np.argmax(np.abs(audio_raw)))
-        # Cắt với 50ms trước đỉnh
-        start_idx = max(0, peak_idx - int(sr * 0.05))
+        # Cắt với 150ms trước đỉnh lớn nhất
+        start_idx = max(0, peak_idx - int(sr * 0.15))
         end_idx = start_idx + clip_samples
         if end_idx > len(audio_raw):
             end_idx = len(audio_raw)

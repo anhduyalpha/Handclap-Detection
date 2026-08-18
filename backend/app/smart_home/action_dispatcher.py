@@ -24,22 +24,11 @@ class ActionDispatcher:
         self.broadcast_callback = callback
 
     def dispatch_pattern(self, pattern: str, count: int, events_meta: List[Dict[str, Any]]):
-        """Thực thi hành động tương ứng với pattern vỗ tay"""
+        """Thực thi hành động tương ứng với 2 tiếng vỗ tay (Double Clap)"""
         action_name = ""
         bulb_state = None
 
-        if pattern == "single":
-            action_name = settings.light.single_clap_action
-            if action_name == "toggle_power":
-                bulb_state = virtual_bulb.toggle_power(source="clap_single")
-            elif action_name == "next_color":
-                bulb_state = virtual_bulb.next_color(source="clap_single")
-            elif action_name == "party_mode":
-                bulb_state = virtual_bulb.party_mode(source="clap_single")
-            else:
-                action_name = "none"
-
-        elif pattern == "double":
+        if pattern == "double":
             action_name = settings.light.double_clap_action
             if action_name == "toggle_power":
                 bulb_state = virtual_bulb.toggle_power(source="clap_double")
@@ -48,18 +37,10 @@ class ActionDispatcher:
             elif action_name == "party_mode":
                 bulb_state = virtual_bulb.party_mode(source="clap_double")
             else:
-                action_name = "none"
-
-        elif pattern == "triple":
-            action_name = settings.light.triple_clap_action
-            if action_name == "party_mode":
-                bulb_state = virtual_bulb.party_mode(source="clap_triple")
-            elif action_name == "next_color":
-                bulb_state = virtual_bulb.next_color(source="clap_triple")
-            elif action_name == "toggle_power":
-                bulb_state = virtual_bulb.toggle_power(source="clap_triple")
-            else:
-                action_name = "none"
+                action_name = "toggle_power"
+                bulb_state = virtual_bulb.toggle_power(source="clap_double")
+        else:
+            action_name = "none"
 
         if bulb_state is None:
             bulb_state = virtual_bulb.get_state()

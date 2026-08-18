@@ -56,8 +56,8 @@ class LiveDetectionEngine:
         print(f"[LiveEngine] [Pattern Matched] Pattern='{pattern}', Count={count} clap(s) -> Dispatching action & Webhook...")
         action_dispatcher.dispatch_pattern(pattern, count, events_meta)
 
-        # Trích xuất 500ms âm thanh quanh cú kích hoạt lưu vào TriggerHistory
-        clip_samples = int(self.sample_rate * 0.5)
+        # Trích xuất 800ms âm thanh quanh 2 cú vỗ tay để lưu vào TriggerHistory
+        clip_samples = int(self.sample_rate * 0.8)
         audio_clip = self.ring_buffer.get_recent(clip_samples)
 
         avg_conf = sum(e.get("confidence", 0.8) for e in events_meta) / max(1, len(events_meta)) if events_meta else 0.8
@@ -80,7 +80,7 @@ class LiveDetectionEngine:
             })
 
         # Tự động gửi mẫu True Clap sang Windows nếu được bật (rate-limited: tối đa 1 mẫu mỗi 15s)
-        if pattern in ("double", "triple") and avg_conf >= 0.85:
+        if pattern == "double" and avg_conf >= 0.85:
             if getattr(settings, "windows_studio_url", None) and getattr(settings, "auto_collect_true_claps", True):
                 now_t = time.time()
                 if now_t - getattr(self, "_last_true_clap_sent", 0.0) > 15.0:
@@ -93,7 +93,7 @@ class LiveDetectionEngine:
                             audio_clip=audio_clip,
                             target_url=settings.windows_studio_url
                         )
-                        print("[LiveEngine] [ActiveLearning] True Clap sample automatically forwarded to Windows Studio!")
+                        print("[LiveEngine] [ActiveLearning] True Double-Clap sample automatically forwarded to Windows Studio!")
                     except Exception as err:
                         print(f"[LiveEngine] ActiveLearning note: {err}")
 
@@ -169,7 +169,7 @@ class LiveDetectionEngine:
         if is_transient:
             print(f"[LiveEngine] [Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f}, EnergyThresh={energy_thresh:.3f}")
             
-            if (now - self.last_detection_time > 0.09): # Tối thiểu 90ms giữa 2 lần nhận diện để bắt được các cú vỗ liên tiếp rất nhanh
+            if (now - self.last_detection_time > 0.07): # Tối thiểu 70ms giữa 2 lần nhận diện để bắt được các cú vỗ liên tiếp rất nhanh
                 # Trích xuất cửa sổ 250ms (4000 samples) xung quanh thời điểm phát hiện
                 clip_samples = int(self.sample_rate * settings.audio.clip_duration_sec)
                 clip = self.ring_buffer.get_recent(clip_samples)
@@ -203,10 +203,10 @@ class LiveDetectionEngine:
                     if is_clap:
                         self.last_detection_time = now
                         telemetry["clap_detected"] = True
-                        print(f"[LiveEngine] [CLAP CONFIRMED] Confidence={confidence:.2f} -> Registering with PatternMatcher...")
+                        print(f"[LiveEngine] [CLAP CONFIRMED] Confidence={confidence:.2f} -> Registering with InstantPatternMatcher...")
 
-                        # Ghi nhận vào bộ đếm nhịp vỗ tay (PatternMatcher sẽ gọi ActionDispatcher gửi Webhook duy nhất)
-                        self.pattern_matcher.register_clap(
+                        # Ghi nhận vào bộ đếm nhịp vỗ tay tức thời (Instant Double-Clap)
+                        pattern_res = self.pattern_matcher.register_clap(
                             confidence=confidence,
                             meta={
                                 "timestamp": now,
@@ -216,8 +216,16 @@ class LiveDetectionEngine:
                             }
                         )
 
-                        # Bắn sự kiện tức thì CLAP_HIT để UI chớp sáng
+                        # Bắn sự kiện tức thì CLAP_STEP và CLAP_HIT để UI phản hồi nhịp 1/2 và 2/2
                         if self.broadcast_callback:
+                            step_val = 1 if pattern_res == "step_1" else (2 if pattern_res == "double" else 1)
+                            self.broadcast_callback({
+                                "type": "CLAP_STEP",
+                                "step": step_val,
+                                "total": 2,
+                                "confidence": round(confidence, 3),
+                                "timestamp": now
+                            })
                             self.broadcast_callback({
                                 "type": "CLAP_HIT",
                                 "confidence": round(confidence, 3),

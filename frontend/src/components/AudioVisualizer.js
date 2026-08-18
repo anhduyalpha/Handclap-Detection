@@ -170,6 +170,15 @@ export class AudioVisualizer {
       this.updateAmbientBadge();
     });
 
+    // Lắng nghe từng nhịp vỗ tay (CLAP_STEP) để phản hồi thị giác 2 bước
+    wsClient.on('CLAP_STEP', (data) => {
+      if (data && data.step === 1) {
+        this.triggerStep1Flash(data.confidence);
+      } else if (data && data.step === 2) {
+        this.triggerStep2Flash(data.confidence);
+      }
+    });
+
     // Lắng nghe Clap Hit (Hiệu ứng chớp sáng tức thì)
     wsClient.on('CLAP_HIT', (data) => {
       this.triggerFlash();
@@ -179,6 +188,35 @@ export class AudioVisualizer {
     wsClient.on('ACTION_TRIGGERED', (data) => {
       this.addTimelineEvent(data);
     });
+  }
+
+  triggerStep1Flash(conf) {
+    const aiText = this.container.querySelector('#ai-status-text');
+    if (aiText) {
+      aiText.textContent = `👏 Nhịp 1/2... (Sẵn sàng vỗ nhịp 2)`;
+      aiText.style.color = '#fbbf24';
+    }
+    const container = this.container.querySelector('#canvas-container');
+    if (container) {
+      container.style.boxShadow = '0 0 25px rgba(251, 191, 36, 0.5)';
+      setTimeout(() => {
+        if (container) container.style.boxShadow = '';
+      }, 400);
+    }
+  }
+
+  triggerStep2Flash(conf) {
+    const aiText = this.container.querySelector('#ai-status-text');
+    if (aiText) {
+      aiText.textContent = `👏👏 Thành công! (${Math.round((conf || 0.85)*100)}%)`;
+      aiText.style.color = '#34d399';
+      setTimeout(() => {
+        if (aiText) {
+          aiText.textContent = 'Đang lắng nghe...';
+          aiText.style.color = '';
+        }
+      }, 2000);
+    }
   }
 
   triggerFlash() {

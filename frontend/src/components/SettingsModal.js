@@ -93,35 +93,14 @@ export class SettingsModal {
 
             <!-- Action Mapping -->
             <div class="form-group">
-              <div class="form-label">Ánh xạ hành động theo nhịp vỗ</div>
-              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                  <span style="font-size: 0.85rem;">👏 1 Vỗ (Single):</span>
-                  <select class="form-select" id="select-act-single" style="width: 60%;">
-                    <option value="none" selected>🚫 Bỏ qua (Chống nhận nhầm 100%)</option>
-                    <option value="toggle_power">Bật / Tắt Đèn (Toggle Power)</option>
-                    <option value="next_color">Đổi Màu (Next RGB Color)</option>
-                    <option value="party_mode">Party Mode</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                  <span style="font-size: 0.85rem;">👏👏 2 Vỗ (Double):</span>
-                  <select class="form-select" id="select-act-double" style="width: 60%;">
-                    <option value="toggle_power" selected>Bật / Tắt Đèn (Toggle Power)</option>
-                    <option value="next_color">Đổi Màu (Next RGB Color)</option>
-                    <option value="party_mode">Party Mode</option>
-                    <option value="none">🚫 Bỏ qua (Không làm gì)</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                  <span style="font-size: 0.85rem;">👏👏👏 3 Vỗ (Triple):</span>
-                  <select class="form-select" id="select-act-triple" style="width: 60%;">
-                    <option value="party_mode" selected>Party Strobe Mode</option>
-                    <option value="next_color">Đổi Màu (Next RGB Color)</option>
-                    <option value="toggle_power">Bật / Tắt Đèn (Toggle Power)</option>
-                    <option value="none">🚫 Bỏ qua (Không làm gì)</option>
-                  </select>
-                </div>
+              <div class="form-label">Hành động khi vỗ 2 tiếng liên tiếp (Double Clap)</div>
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--accent-cyan);">👏👏 2 Vỗ (Double):</span>
+                <select class="form-select" id="select-act-double" style="width: 65%;">
+                  <option value="toggle_power" selected>💡 Bật / Tắt Đèn (Toggle Power)</option>
+                  <option value="next_color">🎨 Đổi Màu (Next RGB Color)</option>
+                  <option value="party_mode">🎉 Party Strobe Mode</option>
+                </select>
               </div>
             </div>
 
@@ -209,9 +188,7 @@ export class SettingsModal {
         energy_threshold: parseFloat(inputEnergy.value),
         confidence_threshold: parseFloat(inputConf.value),
         max_inter_clap_ms: parseInt(inputWindow.value, 10),
-        single_clap_action: this.container.querySelector('#select-act-single').value,
-        double_clap_action: this.container.querySelector('#select-act-double').value,
-        triple_clap_action: this.container.querySelector('#select-act-triple').value,
+        double_clap_action: this.container.querySelector('#select-act-double')?.value || 'toggle_power',
         webhook_url: this.container.querySelector('#input-webhook').value,
         windows_studio_url: this.container.querySelector('#input-windows-url')?.value || 'http://192.168.2.134:8001',
         linux_server_url: this.container.querySelector('#input-linux-url')?.value || 'http://192.168.2.171:8000',
@@ -264,14 +241,10 @@ export class SettingsModal {
     }
 
     if (light) {
-      const sSingle = this.container.querySelector('#select-act-single');
       const sDouble = this.container.querySelector('#select-act-double');
-      const sTriple = this.container.querySelector('#select-act-triple');
       const inWebhook = this.container.querySelector('#input-webhook');
 
-      if (sSingle) sSingle.value = light.single_clap_action;
-      if (sDouble) sDouble.value = light.double_clap_action;
-      if (sTriple) sTriple.value = light.triple_clap_action;
+      if (sDouble) sDouble.value = light.double_clap_action || 'toggle_power';
       if (inWebhook) inWebhook.value = light.webhook_url || '';
     }
 

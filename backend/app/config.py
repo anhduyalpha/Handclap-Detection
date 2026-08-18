@@ -61,19 +61,17 @@ class SensitivityPresets:
     }
 
 class PatternConfig(BaseModel):
-    # Nhận diện chuỗi vỗ tay nhanh (Double Claps)
-    min_inter_clap_ms: int = 90       # Khoảng cách tối thiểu giữa 2 cú vỗ (bắt kịp 2 tiếng vỗ rất nhanh)
-    max_inter_clap_ms: int = 420      # Khoảng cách tối đa để tính là 1 cặp vỗ kép (phản hồi tức thì)
-    cooldown_ms: int = 450            # Thời gian nghỉ sau khi thực thi hành động (chống dội lệnh)
+    # Nhận diện chuỗi 2 tiếng vỗ tay tức thời (Instant Double Clap)
+    min_inter_clap_ms: int = 70        # Khoảng cách tối thiểu giữa 2 cú vỗ (bắt kịp cả tiếng vỗ nhanh 70ms)
+    max_inter_clap_ms: int = 550       # Cửa sổ tối đa cho phép giữa cú vỗ 1 và 2 (550ms)
+    cooldown_ms: int = 400             # Thời gian nghỉ sau khi thực thi hành động (chống dội lệnh)
 
 class SmartLightConfig(BaseModel):
     power: bool = True
-    brightness: int = 80              # 0 - 100
-    color: str = "#00e5ff"            # Hex color (Cyan neon default)
-    mode: str = "solid"               # "solid" | "rainbow" | "pulse" | "party"
-    single_clap_action: str = "none"           # Bỏ qua 1 tiếng vỗ đơn lẻ để chống nhận nhầm 100%
+    brightness: int = 80               # 0 - 100
+    color: str = "#00e5ff"             # Hex color (Cyan neon default)
+    mode: str = "solid"                # "solid" | "rainbow" | "pulse" | "party"
     double_clap_action: str = "toggle_power"   # 2 tiếng vỗ liên tiếp (Double Clap) -> Bật/Tắt Đèn
-    triple_clap_action: str = "party_mode"     # 3 tiếng vỗ liên tiếp -> Party Mode
     webhook_url: str = "http://192.168.2.171:8123/api/webhook/vo_tay_toggle_den" # Webhook Home Assistant / ESP32
 
 class AdaptiveNoiseConfig(BaseModel):

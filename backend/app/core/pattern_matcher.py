@@ -4,17 +4,25 @@ from typing import Callable, Optional, Dict, Any, List
 
 class ClapPatternMatcher:
     """
-    Bộ nhận diện chuỗi vỗ tay (Clap Pattern Engine).
-    Phân biệt chính xác:
-    - 1 Clap (Single): Vỗ 1 lần -> Đợi hết cửa sổ (vd 450ms) nếu không có vỗ tiếp theo thì phát sinh sự kiện SINGLE_CLAP.
-    - 2 Claps (Double): Vỗ 2 lần liên tiếp trong khoảng 90ms - 420ms.
-    - 3 Claps (Triple): Vỗ 3 lần liên tiếp trong khoảng 90ms - 420ms.
+    Bộ nhận diện Nhịp Vỗ Kép Tức Thời (Instant Double-Clap Engine).
+    
+    Cơ chế hoạt động:
+    1. Cú vỗ 1 (Step 1): Mở cổng chờ (Armed State). Phát sự kiện chớp sáng nhẹ trên Web (Nhịp 1/2).
+       - Hoàn toàn KHÔNG dùng Timer, KHÔNG sinh sự kiện 1 vỗ (Single Clap), KHÔNG tạo log rác.
+       - Tự động hết hạn trong im lặng nếu sau 550ms không có cú vỗ thứ 2.
+    2. Cú vỗ 2 (Step 2): Khi có cú vỗ thứ 2 trong khoảng 70ms - 550ms:
+       - KÍCH HOẠT TỨC THÌ (Zero Latency = 0ms).
+       - Bật/tắt đèn và gửi Webhook Home Assistant ngay tại thời điểm dứt tiếng vỗ thứ 2!
+       - Bắt trọn vẹn cả 2 tiếng vỗ trong đoạn ghi âm 800ms.
+    3. Bộ lọc chống dội âm (Anti-Echo / Reverb Rejection):
+       - Bỏ qua các xung < 70ms (tiếng vọng âm học trong phòng).
+       - Đặt Cooldown 400ms sau khi thực hiện hành động để chống dội lệnh.
     """
     def __init__(
         self,
-        min_interval_ms: int = 90,
-        max_interval_ms: int = 420,
-        cooldown_ms: int = 450,
+        min_interval_ms: int = 70,
+        max_interval_ms: int = 550,
+        cooldown_ms: int = 400,
         on_pattern_callback: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None
     ):
         self.min_interval_ms = min_interval_ms
@@ -22,10 +30,9 @@ class ClapPatternMatcher:
         self.cooldown_ms = cooldown_ms
         self.on_pattern = on_pattern_callback
         
-        self.clap_timestamps: List[float] = []
-        self.clap_events_meta: List[Dict[str, Any]] = []
+        self.first_clap_time: Optional[float] = None
+        self.first_clap_meta: Optional[Dict[str, Any]] = None
         self.last_action_time: float = 0.0
-        self.timer: Optional[threading.Timer] = None
         self.lock = threading.Lock()
 
     def update_config(self, min_interval_ms: int, max_interval_ms: int, cooldown_ms: int):
@@ -36,80 +43,51 @@ class ClapPatternMatcher:
 
     def register_clap(self, confidence: float, meta: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
-        Ghi nhận một tiếng vỗ tay vừa được xác thực bởi Stage 2 Classifier.
-        Returns tên pattern nếu kích hoạt tức thời (vd triple clap), hoặc None nếu đang chờ cửa sổ.
+        Ghi nhận một tiếng vỗ tay vừa được xác thực bởi Stage 2 AI Classifier.
+        Returns:
+        - "step_1": Ghi nhận cú vỗ thứ nhất (mở cổng chờ nhịp 2)
+        - "double": Kích hoạt tức thì 2 tiếng vỗ tay liên tiếp
+        - None: Bị chặn bởi Cooldown hoặc Anti-echo
         """
         now = time.time()
+        clap_meta = meta or {"confidence": confidence, "timestamp": now}
         
         with self.lock:
-            # Kiểm tra Cooldown sau khi vừa thực hiện hành động
+            # 1. Kiểm tra Cooldown sau khi vừa thực thi hành động
             if (now - self.last_action_time) * 1000.0 < self.cooldown_ms:
                 return None
-                
-            # Nếu đã có tiếng vỗ trước đó trong hàng đợi
-            if self.clap_timestamps:
-                delta_ms = (now - self.clap_timestamps[-1]) * 1000.0
-                
-                # Quá nhanh (< min_interval): có thể là tiếng vang (echo/reverb), bỏ qua
-                if delta_ms < self.min_interval_ms:
-                    return None
-                    
-                # Quá lâu (> max_interval): chuỗi cũ đã hết hạn, bắt đầu chuỗi mới
-                if delta_ms > self.max_interval_ms:
-                    self._cancel_timer()
-                    self.clap_timestamps.clear()
-                    self.clap_events_meta.clear()
 
-            # Thêm timestamp và metadata
-            self.clap_timestamps.append(now)
-            self.clap_events_meta.append(meta or {"confidence": confidence, "time": now})
-            
-            count = len(self.clap_timestamps)
-            
-            # Nếu đã đạt 3 tiếng vỗ -> Kích hoạt ngay Triple Clap không cần chờ timer
-            if count >= 3:
-                self._cancel_timer()
-                pattern = "triple"
-                self._dispatch_pattern(pattern, count)
-                return pattern
-            else:
-                # Nếu là tiếng vỗ thứ 1 hoặc 2: đặt Timer chờ xem có tiếng vỗ tiếp theo không
-                self._cancel_timer()
-                wait_seconds = (self.max_interval_ms + 50) / 1000.0
-                self.timer = threading.Timer(wait_seconds, self._on_timeout)
-                self.timer.daemon = True
-                self.timer.start()
+            # 2. Nếu chưa có cú vỗ 1 hoặc cú vỗ 1 đã hết hạn (> max_interval)
+            if self.first_clap_time is None or (now - self.first_clap_time) * 1000.0 > self.max_interval_ms:
+                self.first_clap_time = now
+                self.first_clap_meta = clap_meta
+                print(f"[InstantPatternMatcher] 👏 Step 1/2 armed at {now:.3f}. Waiting for 2nd clap ({self.min_interval_ms}-{self.max_interval_ms}ms)...")
+                return "step_1"
+
+            # 3. Đã có cú vỗ 1 hợp lệ trong cửa sổ -> Kiểm tra cú vỗ 2
+            delta_ms = (now - self.first_clap_time) * 1000.0
+
+            # Quá nhanh (< min_interval): Tiếng dội âm phòng / echo, bỏ qua
+            if delta_ms < self.min_interval_ms:
+                print(f"[InstantPatternMatcher] [Anti-Echo] Dropped pulse too close ({delta_ms:.1f}ms < {self.min_interval_ms}ms)")
                 return None
 
-    def _cancel_timer(self):
-        if self.timer is not None:
-            self.timer.cancel()
-            self.timer = None
-
-    def _on_timeout(self):
-        """Hết thời gian chờ, xác định pattern dựa trên số lượng tiếng vỗ đã ghi nhận"""
-        with self.lock:
-            count = len(self.clap_timestamps)
-            if count == 1:
-                pattern = "single"
-            elif count == 2:
-                pattern = "double"
-            elif count >= 3:
-                pattern = "triple"
-            else:
-                pattern = "none"
+            # Khoảng cách chuẩn (70ms - 550ms): KÍCH HOẠT DOUBLE CLAP NGAY TỨC THÌ!
+            if self.min_interval_ms <= delta_ms <= self.max_interval_ms:
+                print(f"\n{'='*55}\n🎉 [InstantPatternMatcher] 👏👏 DOUBLE CLAP CONFIRMED! Delta = {delta_ms:.1f}ms (Zero Delay Trigger)\n{'='*55}")
+                self.last_action_time = now
+                events = [self.first_clap_meta, clap_meta]
                 
-            if count > 0:
-                self._dispatch_pattern(pattern, count)
+                # Reset trạng thái
+                self.first_clap_time = None
+                self.first_clap_meta = None
 
-    def _dispatch_pattern(self, pattern: str, count: int):
-        self.last_action_time = time.time()
-        events = list(self.clap_events_meta)
-        self.clap_timestamps.clear()
-        self.clap_events_meta.clear()
-        
-        if self.on_pattern and pattern != "none":
-            try:
-                self.on_pattern(pattern, count, events)
-            except Exception as e:
-                print(f"[PatternMatcher] Error in callback: {e}")
+                if self.on_pattern:
+                    try:
+                        self.on_pattern("double", 2, events)
+                    except Exception as e:
+                        print(f"[InstantPatternMatcher] Callback error: {e}")
+
+                return "double"
+
+            return None
