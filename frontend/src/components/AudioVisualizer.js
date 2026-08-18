@@ -267,9 +267,7 @@ export class AudioVisualizer {
 
     const timeStr = new Date(event.timestamp * 1000).toLocaleTimeString();
     const patternLabels = {
-      single: '👏 1 Vỗ (Single)',
       double: '👏👏 2 Vỗ (Double)',
-      triple: '👏👏👏 3 Vỗ (Triple)',
       manual_update: '⚙️ Thủ công'
     };
 
@@ -277,15 +275,15 @@ export class AudioVisualizer {
       toggle_power: 'Bật/Tắt đèn',
       next_color: 'Đổi màu RGB',
       party_mode: 'Party Strobe',
-      '': 'Phát hiện vỗ tay'
+      '': 'Phát hiện 2 vỗ'
     };
 
     const item = document.createElement('div');
     item.className = 'timeline-item';
     item.innerHTML = `
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        <span class="timeline-item-badge ${event.pattern || 'single'}">
-          ${patternLabels[event.pattern] || event.pattern}
+        <span class="timeline-item-badge ${event.pattern || 'double'}">
+          ${patternLabels[event.pattern] || '👏👏 2 Vỗ (Double)'}
         </span>
         <span style="color: var(--text-primary); font-weight: 600;">
           ${actionLabels[event.action] || event.action}

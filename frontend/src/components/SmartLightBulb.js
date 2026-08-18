@@ -96,17 +96,17 @@ export class SmartLightBulb {
 
           <!-- Mode / Quick Action Triggers -->
           <div class="quick-triggers">
-            <button class="quick-trigger-btn" id="btn-trigger-single">
-              <span>👏 1 Vỗ</span>
-              <span>Bật / Tắt</span>
+            <button class="quick-trigger-btn" id="btn-trigger-double" style="flex: 1.2;">
+              <span>👏👏 2 Vỗ Tay</span>
+              <span>Bật / Tắt Đèn</span>
             </button>
-            <button class="quick-trigger-btn" id="btn-trigger-double">
-              <span>👏👏 2 Vỗ</span>
-              <span>Đổi màu</span>
+            <button class="quick-trigger-btn" id="btn-trigger-color" style="flex: 1;">
+              <span>🎨 Đổi Màu</span>
+              <span>RGB Preset</span>
             </button>
-            <button class="quick-trigger-btn" id="btn-trigger-triple">
-              <span>👏👏👏 3 Vỗ</span>
-              <span>Party Mode</span>
+            <button class="quick-trigger-btn" id="btn-trigger-party" style="flex: 1;">
+              <span>🎉 Party Mode</span>
+              <span>Chớp Màu</span>
             </button>
           </div>
         </div>
@@ -140,15 +140,15 @@ export class SmartLightBulb {
     });
 
     // Quick trigger buttons
-    this.container.querySelector('#btn-trigger-single')?.addEventListener('click', () => {
+    this.container.querySelector('#btn-trigger-double')?.addEventListener('click', () => {
       ApiClient.triggerBulbAction('toggle_power').then((st) => this.updateState(st));
     });
 
-    this.container.querySelector('#btn-trigger-double')?.addEventListener('click', () => {
+    this.container.querySelector('#btn-trigger-color')?.addEventListener('click', () => {
       ApiClient.triggerBulbAction('next_color').then((st) => this.updateState(st));
     });
 
-    this.container.querySelector('#btn-trigger-triple')?.addEventListener('click', () => {
+    this.container.querySelector('#btn-trigger-party')?.addEventListener('click', () => {
       ApiClient.triggerBulbAction('party_mode').then((st) => this.updateState(st));
     });
 

@@ -9,10 +9,8 @@ Hệ thống ứng dụng Web nhận diện tiếng vỗ tay thời gian thực 
 ### 1. Dual-Stage Detection Pipeline (Xử Lý Âm Thanh Kép)
 - **Stage 1: DSP Transient Detector (<5ms)**: Sử dụng lọc thông cao Highpass (>1.5kHz), tính toán Crest Factor (độ nhọn xung) và Spectral Energy Ratio để bắt nhanh xung âm thanh vỗ tay với chi phí CPU gần như bằng 0.
 - **Stage 2: AI Mel-Spectrogram Classifier**: Khi Stage 1 kích hoạt, cửa sổ 250ms được trích xuất Mel-Spectrogram (40 filterbanks) và phân loại qua mạng nơ-ron **ClapCNN2D** / **Random Forest Ensemble** để loại trừ triệt để tiếng ho, tiếng gõ bàn, tiếng đóng cửa hay tiếng nói chuyện.
-- **Pattern Matcher (Nhận diện chuỗi vỗ tay)**:
-  - 👏 **1 Vỗ (Single Clap)**: Bật / Tắt đèn ảo (Toggle Power).
-  - 👏👏 **2 Vỗ (Double Clap)**: Chuyển đổi màu sắc RGB Neon.
-  - 👏👏👏 **3 Vỗ (Triple Clap)**: Kích hoạt chế độ Party Strobe / Pháo hoa chúc mừng.
+- **Instant Double-Clap Pattern Matcher (Khớp nhịp vỗ kép tức thời)**:
+  - 👏👏 **2 Vỗ (Double Clap)**: Kích hoạt tức thì Bật / Tắt đèn & gửi Webhook Home Assistant / ESP32 (Độ trễ = 0.00ms, chống dội âm 140ms).
 
 ### 2. Personalized Training Studio (Huấn Luyện Mô Hình Cá Nhân)
 - **Wizard 3 bước ngay trên Web UI**:
