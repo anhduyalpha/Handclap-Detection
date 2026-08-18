@@ -61,10 +61,10 @@ class SensitivityPresets:
     }
 
 class PatternConfig(BaseModel):
-    # Nhận diện chuỗi vỗ tay (Single, Double, Triple)
-    min_inter_clap_ms: int = 180      # Khoảng thời gian tối thiểu giữa 2 lần vỗ (tránh dội âm)
-    max_inter_clap_ms: int = 480      # Khoảng thời gian tối đa để tính là cùng 1 chuỗi (phản hồi nhanh)
-    cooldown_ms: int = 700            # Thời gian nghỉ sau khi thực thi hành động (chống dội lệnh)
+    # Nhận diện chuỗi vỗ tay nhanh (Double Claps)
+    min_inter_clap_ms: int = 90       # Khoảng cách tối thiểu giữa 2 cú vỗ (bắt kịp 2 tiếng vỗ rất nhanh)
+    max_inter_clap_ms: int = 420      # Khoảng cách tối đa để tính là 1 cặp vỗ kép (phản hồi tức thì)
+    cooldown_ms: int = 450            # Thời gian nghỉ sau khi thực thi hành động (chống dội lệnh)
 
 class SmartLightConfig(BaseModel):
     power: bool = True

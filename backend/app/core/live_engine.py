@@ -149,7 +149,7 @@ class LiveDetectionEngine:
         if is_transient:
             print(f"[LiveEngine] [Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f}, EnergyThresh={energy_thresh:.3f}")
             
-            if (now - self.last_detection_time > 0.30): # Tối thiểu 300ms giữa 2 lần nhận diện để triệt tiêu hoàn toàn tiếng vọng (reverb/echo)
+            if (now - self.last_detection_time > 0.09): # Tối thiểu 90ms giữa 2 lần nhận diện để bắt được các cú vỗ liên tiếp rất nhanh
                 # Trích xuất cửa sổ 250ms (4000 samples) xung quanh thời điểm phát hiện
                 clip_samples = int(self.sample_rate * settings.audio.clip_duration_sec)
                 clip = self.ring_buffer.get_recent(clip_samples)

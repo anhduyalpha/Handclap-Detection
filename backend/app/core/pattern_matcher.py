@@ -7,14 +7,14 @@ class ClapPatternMatcher:
     Bộ nhận diện chuỗi vỗ tay (Clap Pattern Engine).
     Phân biệt chính xác:
     - 1 Clap (Single): Vỗ 1 lần -> Đợi hết cửa sổ (vd 450ms) nếu không có vỗ tiếp theo thì phát sinh sự kiện SINGLE_CLAP.
-    - 2 Claps (Double): Vỗ 2 lần liên tiếp trong khoảng 140ms - 650ms.
-    - 3 Claps (Triple): Vỗ 3 lần liên tiếp trong khoảng 140ms - 650ms.
+    - 2 Claps (Double): Vỗ 2 lần liên tiếp trong khoảng 90ms - 420ms.
+    - 3 Claps (Triple): Vỗ 3 lần liên tiếp trong khoảng 90ms - 420ms.
     """
     def __init__(
         self,
-        min_interval_ms: int = 140,
-        max_interval_ms: int = 650,
-        cooldown_ms: int = 400,
+        min_interval_ms: int = 90,
+        max_interval_ms: int = 420,
+        cooldown_ms: int = 450,
         on_pattern_callback: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None
     ):
         self.min_interval_ms = min_interval_ms

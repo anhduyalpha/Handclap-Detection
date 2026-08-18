@@ -85,10 +85,10 @@ export class SettingsModal {
             <!-- Timing Window -->
             <div class="form-group">
               <div class="form-label" style="display: flex; justify-content: space-between;">
-                <span>Cửa sổ thời gian vỗ kép (Max Clap Window)</span>
-                <span id="label-window-thresh">650 ms</span>
+                <span>Cửa sổ thời gian vỗ kép nhanh (Max Clap Window)</span>
+                <span id="label-window-thresh">420 ms</span>
               </div>
-              <input type="range" class="form-range" id="input-window-thresh" min="300" max="1000" step="50" value="650">
+              <input type="range" class="form-range" id="input-window-thresh" min="200" max="800" step="20" value="420">
             </div>
 
             <!-- Action Mapping -->
