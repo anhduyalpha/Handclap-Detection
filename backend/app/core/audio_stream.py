@@ -5,11 +5,11 @@ from typing import Optional, Tuple
 class AudioRingBuffer:
     """
     Bộ đệm vòng (Ring Buffer) luồng âm thanh thời gian thực.
-    Lưu trữ lịch sử âm thanh float32 liên tục (ví dụ 1.5 - 2.0 giây)
-    để khi phát hiện xung (transient), có thể trích xuất chính xác
-    cửa sổ âm thanh [trước xung 50ms, sau xung 200ms].
+    Lưu trữ lịch sử âm thanh float32 liên tục (3.0 giây @ 16kHz = 48,000 mẫu)
+    để khi phát hiện chuỗi vỗ tay, có thể trích xuất chính xác
+    cửa sổ âm thanh 800ms chứa trọn vẹn cả 2 tiếng vỗ.
     """
-    def __init__(self, capacity_samples: int = 24000, sample_rate: int = 16000):
+    def __init__(self, capacity_samples: int = 48000, sample_rate: int = 16000):
         self.capacity = capacity_samples
         self.sample_rate = sample_rate
         self.buffer = np.zeros(capacity_samples, dtype=np.float32)

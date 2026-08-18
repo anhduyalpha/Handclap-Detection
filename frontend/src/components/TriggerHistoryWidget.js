@@ -220,7 +220,7 @@ export class TriggerHistoryWidget {
       row.className = `trigger-event-row ${ev.is_false_positive ? 'marked-fp' : ''}`;
       row.setAttribute('data-id', ev.id);
 
-      const patternLabel = ev.pattern === 'double' ? '👏 2 Vỗ (Double)' : '👏 1 Vỗ (Single)';
+      const patternLabel = ev.pattern === 'double' ? '👏👏 2 Vỗ (Double)' : '👏 Vỗ Tay';
       const confPct = Math.round((ev.confidence || 0.8) * 100);
 
       row.innerHTML = `
@@ -291,6 +291,36 @@ export class TriggerHistoryWidget {
     if (modal) modal.style.display = 'none';
   }
 
+  showToast(message, isSuccess = true) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      background: ${isSuccess ? 'linear-gradient(135deg, #064e3b, #047857)' : 'linear-gradient(135deg, #7f1d1d, #b91c1c)'};
+      border: 1px solid ${isSuccess ? '#10b981' : '#ef4444'};
+      border-radius: 10px;
+      padding: 12px 18px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideInUp 0.3s ease;
+    `;
+    toast.innerHTML = `
+      <span>${isSuccess ? '🚀' : '⚠️'}</span>
+      <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      if (toast.parentElement) toast.remove();
+    }, 4000);
+  }
+
   async executeFalsePositiveMining() {
     if (!this.selectedEventForMining) return;
     const eventId = this.selectedEventForMining;
@@ -309,12 +339,12 @@ export class TriggerHistoryWidget {
         this.events = this.events.filter(e => e.id !== eventId);
         this.renderEventList();
         this.closeModal();
-        alert(res.message || '🎉 Đã chuyển đoạn âm thanh sang máy Windows và xóa khỏi danh sách trên Server!');
+        this.showToast(res.message || 'Đã chuyển đoạn âm thanh sang máy Windows và xóa khỏi danh sách trên Server!', true);
       } else {
-        alert('Lỗi: ' + (res?.message || 'Không thể chuyển mẫu'));
+        this.showToast('Lỗi: ' + (res?.message || 'Không thể chuyển mẫu'), false);
       }
     } catch (err) {
-      alert('Lỗi xử lý: ' + err.message);
+      this.showToast('Lỗi xử lý: ' + err.message, false);
     } finally {
       if (confirmBtn) {
         confirmBtn.disabled = false;

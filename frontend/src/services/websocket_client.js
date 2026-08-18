@@ -14,9 +14,13 @@ export class WebSocketClient {
   _getWebSocketUrl() {
     const loc = window.location;
     const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Nếu chạy qua Vite dev server trên port 5173, kết nối tới proxy /ws/audio hoặc trực tiếp 8000
+    // Nếu chạy qua Vite dev server port 5173 (Linux Live Dashboard), kết nối backend 8000
     if (loc.port === '5173') {
       return `ws://${loc.hostname}:8000/ws/audio`;
+    }
+    // Nếu chạy qua Vite dev server port 5174 (Windows Training Studio), kết nối backend 8001
+    if (loc.port === '5174') {
+      return `ws://${loc.hostname}:8001/ws/audio`;
     }
     return `${proto}//${loc.host}/ws/audio`;
   }

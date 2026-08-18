@@ -100,9 +100,17 @@ def main():
         print(f"  📊 Tổng số mẫu sau Augment:  {results.get('total_augmented_samples', 0)}")
         print(f"  💾 Thư mục đã lưu:           {CHECKPOINTS_DIR / profile_name}")
         print("=" * 68)
-        print("\n👉 NẾU WINSCP ĐANG BẬT ĐỒNG BỘ (Ctrl+U):")
-        print("   File model (.pt & .joblib) đã được tự động đẩy sang Server Dell!")
-        print("   Server Dell sẽ tự động Hot-Reload mô hình mới ngay trong RAM mà không cần khởi động lại!\n")
+
+        # Tự động đẩy Checkpoint sang Server Linux qua REST API
+        try:
+            from app.training.auto_learner import auto_learner
+            linux_url = getattr(settings, "linux_server_url", "http://192.168.2.171:8000")
+            print(f"[*] Đang tự động gửi Checkpoints sang Server Linux ({linux_url})...")
+            auto_learner._sync_checkpoint_to_linux(profile_name, linux_url, results)
+        except Exception as sync_err:
+            print(f"[!] Gợi ý: Nếu chưa kết nối Server Linux, bạn có thể đồng bộ qua WinSCP (Ctrl+U): {sync_err}")
+
+        print("\n👉 Server Dell sẽ tự động Hot-Reload mô hình mới ngay trong RAM mà không cần khởi động lại!\n")
 
     except Exception as e:
         print(f"\n[X] LỖI trong quá trình huấn luyện: {e}")
