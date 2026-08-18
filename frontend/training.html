@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HandClap AI - Training Studio Pro (Windows)</title>
+    <meta name="description" content="Studio chuyên dụng thu âm mẫu âm thanh, tùy chỉnh siêu tham số và huấn luyện mô hình AI vỗ tay cá nhân hóa bằng GPU trên Windows." />
+    
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body class="training-body">
+    <!-- Studio Header -->
+    <header class="studio-header">
+      <div class="brand-container">
+        <div class="brand-logo studio-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">Training Studio <span class="badge-pro">PRO</span></div>
+          <div class="brand-subline">
+            <span>Windows GPU Workshop</span>
+            <span class="brand-badge">Auto-Sync to Linux</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile Selector Header Widget -->
+      <div class="header-profile-selector">
+        <span class="header-widget-label">Hồ sơ:</span>
+        <select id="select-profile-top" class="form-select"></select>
+        <button id="btn-create-profile-top" class="btn btn-secondary btn-sm" title="Tạo hồ sơ mới">+ Mới</button>
+      </div>
+
+      <!-- Server Connection IP Widget -->
+      <div class="header-server-config">
+        <span class="server-dot" id="server-conn-dot" title="Trạng thái kết nối Server Dell"></span>
+        <label for="input-server-url" class="header-widget-label">Server Dell:</label>
+        <input type="text" id="input-server-url" class="form-input-sm" value="http://192.168.2.171:8000" placeholder="http://192.168.2.171:8000" />
+        <button id="btn-ping-server" class="btn btn-secondary btn-xs">Kiểm Tra</button>
+      </div>
+
+      <!-- Studio Status & GPU Badge -->
+      <div class="header-actions">
+        <div class="status-pill" id="gpu-status-pill">
+          <span class="status-dot connected" id="gpu-status-dot"></span>
+          <span id="gpu-status-text">GPU: Đang kiểm tra...</span>
+        </div>
+
+        <a href="http://192.168.2.171:5173" target="_blank" class="btn btn-secondary btn-sm link-dashboard-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          Mở Linux Dashboard
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Studio Workspace -->
+    <main class="studio-workspace">
+      <!-- Left Column: Audio Recording & Sample Library -->
+      <section class="studio-col studio-col-left">
+        <!-- Card 1: Phòng Thu Âm Mẫu (Microphone Recorder) -->
+        <div class="card glass-card card-recorder">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon-bubble icon-red">🎙️</span>
+              <div>
+                <h3>Thu Âm Mẫu Âm Thanh Thông Minh</h3>
+                <p class="card-subtitle">Thu thập tiếng vỗ tay thật và các loại tiếng ồn phòng</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Granular Category Tabs (5 Danh Mục Chi Tiết) -->
+          <div class="category-tabs-container">
+            <div class="section-micro-label">Danh Mục Thu Âm:</div>
+            <div class="category-tabs-grid">
+              <button class="cat-tab-btn active" data-cat="claps" id="btn-cat-claps">
+                <span class="tab-icon">👏</span>
+                <span class="tab-title">Vỗ Tay</span>
+                <span class="tab-badge" id="badge-count-claps">0</span>
+              </button>
+              <button class="cat-tab-btn" data-cat="typing" id="btn-cat-typing">
+                <span class="tab-icon">⌨️</span>
+                <span class="tab-title">Gõ Phím/Bàn</span>
+                <span class="tab-badge" id="badge-count-typing">0</span>
+              </button>
+              <button class="cat-tab-btn" data-cat="speech" id="btn-cat-speech">
+                <span class="tab-icon">🗣️</span>
+                <span class="tab-title">Tiếng Nói</span>
+                <span class="tab-badge" id="badge-count-speech">0</span>
+              </button>
+              <button class="cat-tab-btn" data-cat="snaps" id="btn-cat-snaps">
+                <span class="tab-icon">🤏</span>
+                <span class="tab-title">Búng Tay</span>
+                <span class="tab-badge" id="badge-count-snaps">0</span>
+              </button>
+              <button class="cat-tab-btn" data-cat="ambient" id="btn-cat-ambient">
+                <span class="tab-icon">🌪️</span>
+                <span class="tab-title">Ồn Quạt / Nền</span>
+                <span class="tab-badge" id="badge-count-ambient">0</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Recording Mode Selector (3 Chế Độ Thu - Dạng 3 Cột Ngang) -->
+          <div class="rec-modes-container">
+            <div class="rec-mode-header">
+              <span class="section-micro-label">Chế Độ Thu Âm:</span>
+              <div class="duration-pills" id="duration-pills-container">
+                <span style="font-size: 0.72rem; color: var(--text-secondary);">Thời lượng:</span>
+                <button class="dur-pill" data-dur="10">10s</button>
+                <button class="dur-pill active" data-dur="15">15s</button>
+                <button class="dur-pill" data-dur="20">20s</button>
+                <button class="dur-pill" data-dur="30">30s</button>
+              </div>
+            </div>
+            
+            <div class="rec-modes-grid-3col">
+              <button class="mode-card-btn active" id="mode-btn-autosplit" data-mode="autosplit">
+                <div class="mode-card-header">
+                  <span class="mode-icon">⚡</span>
+                  <span class="mode-title">Thu Tự Động Cắt</span>
+                </div>
+                <div class="mode-desc">Vỗ tay nhiều lần, AI tự tách từng cú vỗ</div>
+              </button>
+
+              <button class="mode-card-btn" id="mode-btn-noise-session" data-mode="noise_session">
+                <div class="mode-card-header">
+                  <span class="mode-icon">🌪️</span>
+                  <span class="mode-title">Thu Ồn Nền Liên Tục</span>
+                </div>
+                <div class="mode-desc">Ghi âm 15s quạt/tiếng nói để băm mẫu nhiễu</div>
+              </button>
+
+              <button class="mode-card-btn" id="mode-btn-single" data-mode="single">
+                <div class="mode-card-header">
+                  <span class="mode-icon">🎯</span>
+                  <span class="mode-title">Thu Từng Phát Một</span>
+                </div>
+                <div class="mode-desc">Ghi 1 cú vỗ ngắn chuẩn 2.0 giây</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Mic Source Selector (Dạng Segmented Switch) -->
+          <div class="mic-source-container">
+            <span class="section-micro-label">Nguồn Micro:</span>
+            <div class="mic-segmented-switch">
+              <button class="mic-seg-btn active" data-source="local" id="btn-src-local">
+                <span>💻 Micro Máy Tính Windows (Thu Trực Tiếp)</span>
+              </button>
+              <button class="mic-seg-btn" data-source="server" id="btn-src-server">
+                <span>🐧 Micro Server Dell (ALC3246 Từ Xa)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Recorder Viewport & Action Controls -->
+          <div class="recorder-viewport">
+            <canvas id="record-waveform-canvas" width="400" height="80"></canvas>
+            
+            <!-- Live Timer Progress Bar -->
+            <div class="rec-progress-bar-container" id="rec-progress-container" style="display: none;">
+              <div class="rec-progress-bar-fill" id="rec-progress-fill"></div>
+            </div>
+
+            <div class="recorder-controls">
+              <button class="btn-record-main" id="btn-record-action">
+                <div class="record-pulse-ring"></div>
+                <div class="record-inner-circle">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="8"></circle>
+                  </svg>
+                </div>
+              </button>
+              <div class="record-status-label" id="record-status-label">Bấm để bắt đầu thu liên tục (15s)</div>
+            </div>
+
+            <!-- Mini Audio Preview Player -->
+            <div class="mini-audio-preview" id="mini-audio-preview" style="display: none;">
+              <div class="preview-info">
+                <span class="preview-tag">Mẫu vừa thu:</span>
+                <span class="preview-name" id="preview-sample-name">sample.wav</span>
+              </div>
+              <div class="preview-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-preview-play">▶ Nghe Lại</button>
+                <button class="btn btn-secondary btn-sm btn-preview-del" id="btn-preview-delete" title="Xóa mẫu này">✕</button>
+              </div>
+            </div>
+
+            <!-- Session Result Banner -->
+            <div class="session-result-banner" id="session-result-banner" style="display: none;"></div>
+          </div>
+        </div>
+
+        <!-- Card 2: Thư Viện Mẫu Đã Thu (Sample Library) -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon-bubble icon-blue">📁</span>
+              <div>
+                <h3>Thư Viện Mẫu (<span id="sample-count-total">0</span> mẫu)</h3>
+                <p class="card-subtitle">Các mẫu âm thanh dùng để trích xuất đặc trưng & huấn luyện</p>
+              </div>
+            </div>
+            <button id="btn-refresh-samples" class="btn btn-secondary btn-sm" title="Làm mới">🔄 Làm Mới</button>
+          </div>
+
+          <div class="sample-library-list" id="sample-library-container">
+            <div class="empty-state">Đang tải danh sách mẫu...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Hyperparameters, Training Engine & Live Sandbox Test -->
+      <section class="studio-col studio-col-right">
+        <!-- Card 3: Cấu Hình Siêu Tham Số (Hyperparameters) -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon-bubble icon-purple">⚙️</span>
+              <div>
+                <h3>Cấu Hình Huấn Luyện AI</h3>
+                <p class="card-subtitle">Tùy chỉnh số vòng lặp và mức độ nhân bản dữ liệu (Data Augmentation)</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="hyperparams-grid">
+            <!-- Epochs Slider -->
+            <div class="param-group">
+              <div class="param-header">
+                <label for="slider-epochs">Số Epochs Huấn Luyện CNN:</label>
+                <span class="param-value" id="val-epochs">25</span>
+              </div>
+              <input type="range" id="slider-epochs" min="10" max="60" value="25" step="5" class="slider-input" />
+              <div class="param-hint">Khuyên dùng: 20–30 epochs cho độ hội tụ tối ưu trên GPU NVIDIA.</div>
+            </div>
+
+            <!-- Augmentation Slider -->
+            <div class="param-group">
+              <div class="param-header">
+                <label for="slider-augment">Data Augmentation Factor:</label>
+                <span class="param-value" id="val-augment">15x</span>
+              </div>
+              <input type="range" id="slider-augment" min="5" max="30" value="15" step="1" class="slider-input" />
+              <div class="param-hint">Tự động dịch chuyển cao độ (Pitch), co giãn thời gian (Time Stretch) & thêm nhiễu trắng.</div>
+            </div>
+
+            <!-- Model Architecture Choice -->
+            <div class="param-group">
+              <label for="select-model-arch">Kiến Trúc Mô Hình (Model Architecture):</label>
+              <select id="select-model-arch" class="form-select">
+                <option value="hybrid" selected>⚡ Hybrid Ensemble (ClapCNN2D + Random Forest) - Khuyên Dùng</option>
+                <option value="cnn">🧠 Deep Learning (ClapCNN2D PyTorch)</option>
+                <option value="sklearn">🌲 Classical ML (ExtraTrees + StandardScaler)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Big Action Button: Huấn Luyện GPU -->
+          <div class="training-action-container">
+            <button class="btn-train-action" id="btn-trigger-training">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>BẮT ĐẦU HUẤN LUYỆN & XUẤT SANG LINUX</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 4: Kết Quả Huấn Luyện & Model Checkpoint Status -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon-bubble icon-green">📊</span>
+              <div>
+                <h3>Kết Quả Huấn Luyện & Trọng Số</h3>
+                <p class="card-subtitle">Thông số mô hình hiện tại đã xuất sang thư mục Checkpoint</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-label">Độ Chính Xác (Accuracy)</div>
+              <div class="metric-value text-green" id="metric-accuracy">--</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Tổng Mẫu Sau Augment</div>
+              <div class="metric-value text-blue" id="metric-samples">--</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Thời Gian Tính Toán (GPU)</div>
+              <div class="metric-value text-purple" id="metric-time">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 5: Phòng Thử Nghiệm Sandbox Trên Windows -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon-bubble icon-amber">🧪</span>
+              <div>
+                <h3>Thử Nghiệm Trực Tiếp (Windows Sandbox)</h3>
+                <p class="card-subtitle">Bật mic máy tính và vỗ tay thử nghiệm trước khi đồng bộ sang Server</p>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-toggle-sandbox-mic">
+              <span id="sandbox-mic-label">Bật Test Mic</span>
+            </button>
+          </div>
+
+          <div class="sandbox-display">
+            <div class="sandbox-meter-container">
+              <div class="meter-label-row">
+                <span>Độ tin cậy nhận diện (Confidence):</span>
+                <span id="sandbox-confidence-text" style="font-weight: 700;">0%</span>
+              </div>
+              <div class="meter-bar-track">
+                <div class="meter-bar-fill" id="sandbox-confidence-bar"></div>
+              </div>
+            </div>
+
+            <div class="sandbox-stats-row">
+              <div class="stat-pill">
+                <span>Tổng số cú vỗ bắt được:</span>
+                <strong id="sandbox-hit-count">0</strong>
+              </div>
+              <div class="stat-pill" id="sandbox-last-hit">
+                <span>Trạng thái: Sẵn sàng</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal: Tạo Hồ Sơ Mới -->
+    <div class="modal-overlay" id="create-profile-modal" style="display: none;">
+      <div class="modal-card">
+        <h3>Tạo Hồ Sơ Huấn Luyện Mới</h3>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">Nhập tên định danh cho hồ sơ âm thanh cá nhân:</p>
+        <input type="text" id="input-new-profile-name" class="form-input" placeholder="vd: phong_khach, phong_ngu, duylaptop" />
+        <div class="modal-actions" style="margin-top: 1.25rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button class="btn btn-secondary" id="btn-modal-cancel">Hủy</button>
+          <button class="btn btn-primary" id="btn-modal-confirm">Tạo Mới</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Script Entrypoint -->
+    <script type="module" src="/src/training_main.js"></script>
+  </body>
+</html>

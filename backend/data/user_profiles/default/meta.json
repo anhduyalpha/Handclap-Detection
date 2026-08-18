@@ -1,0 +1,13 @@
+{
+  "name": "default",
+  "accuracy": 77.1,
+  "sensitivity": 91.6,
+  "noise_rejection": 82.8,
+  "cnn_accuracy": 77.1,
+  "sklearn_accuracy": 72.0,
+  "total_augmented_samples": 1800,
+  "raw_claps": 60,
+  "raw_noises": 531,
+  "training_time_sec": 55.4,
+  "updated_at": "2026-08-18 09:13:35"
+}

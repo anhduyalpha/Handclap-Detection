@@ -1,0 +1,11 @@
+{
+  "name": "my_custom_model",
+  "accuracy": 100.0,
+  "cnn_accuracy": 100.0,
+  "sklearn_accuracy": 100.0,
+  "total_samples": 144,
+  "raw_claps": 8,
+  "raw_noises": 6,
+  "training_time_sec": 4.25,
+  "updated_at": "2026-08-14 23:39:59"
+}

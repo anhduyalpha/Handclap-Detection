@@ -1,0 +1,15 @@
+[Unit]
+Description=HandClap Detection & Smart Light Web Service
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=%I
+WorkingDirectory=/opt/handclap-detection
+ExecStart=/opt/handclap-detection/.venv/bin/python run_server.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

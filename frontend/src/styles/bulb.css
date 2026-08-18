@@ -1,0 +1,207 @@
+/* Smart Light Bulb & Neon Glow System */
+
+.bulb-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 480px;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.03), transparent 70%), var(--bg-card);
+}
+
+.bulb-stage {
+  position: relative;
+  width: 220px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Ambient Glow behind the bulb */
+.bulb-ambient-glow {
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: var(--bulb-color, #00e5ff);
+  filter: blur(55px);
+  opacity: 0;
+  transition: opacity 0.4s ease, background-color 0.4s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.bulb-stage.powered-on .bulb-ambient-glow {
+  opacity: calc(var(--bulb-brightness, 85) / 100 * 0.75);
+}
+
+/* 3D Glass Bulb SVG */
+.bulb-svg-container {
+  position: relative;
+  z-index: 2;
+  width: 140px;
+  height: 200px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.bulb-svg-container:hover {
+  transform: scale(1.04);
+}
+
+.bulb-svg-container:active {
+  transform: scale(0.97);
+}
+
+.bulb-glass {
+  fill: rgba(255, 255, 255, 0.08);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2;
+  transition: fill 0.35s ease, filter 0.35s ease;
+}
+
+.bulb-filament {
+  stroke: #444c56;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  fill: none;
+  transition: stroke 0.35s ease, filter 0.35s ease;
+}
+
+.bulb-base {
+  fill: #30363d;
+  stroke: #21262d;
+  stroke-width: 1.5;
+}
+
+.bulb-base-threads {
+  stroke: #484f58;
+  stroke-width: 1.5;
+}
+
+/* When Powered ON */
+.bulb-stage.powered-on .bulb-glass {
+  fill: var(--bulb-color, #00e5ff);
+  fill-opacity: calc(var(--bulb-brightness, 85) / 100 * 0.45);
+  filter: drop-shadow(0 0 20px var(--bulb-color, #00e5ff));
+}
+
+.bulb-stage.powered-on .bulb-filament {
+  stroke: #ffffff;
+  filter: drop-shadow(0 0 8px var(--bulb-color, #00e5ff));
+}
+
+/* Party Mode Animation */
+.bulb-stage.mode-party.powered-on .bulb-ambient-glow,
+.bulb-stage.mode-party.powered-on .bulb-glass {
+  animation: party-strobe 0.8s infinite alternate ease-in-out;
+}
+
+@keyframes party-strobe {
+  0% { filter: hue-rotate(0deg) drop-shadow(0 0 25px #00e5ff); }
+  33% { filter: hue-rotate(120deg) drop-shadow(0 0 35px #ff007f); }
+  66% { filter: hue-rotate(240deg) drop-shadow(0 0 30px #00ff66); }
+  100% { filter: hue-rotate(360deg) drop-shadow(0 0 40px #ffaa00); }
+}
+
+/* Power Switch Indicator */
+.bulb-power-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border: 1px solid var(--border-card);
+  transition: var(--transition);
+}
+
+.bulb-stage.powered-on ~ .bulb-power-badge,
+.bulb-card.powered-on .bulb-power-badge {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--color-success);
+  border-color: rgba(0, 230, 118, 0.3);
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.2);
+}
+
+/* Bulb Controls Panel */
+.bulb-controls {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Color Swatches */
+.color-swatches {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.color-swatch-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  outline: none;
+}
+
+.color-swatch-btn:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch-btn.active {
+  transform: scale(1.2);
+  border-color: #ffffff;
+  box-shadow: 0 0 15px currentColor;
+}
+
+/* Quick Action Triggers */
+.quick-triggers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.quick-trigger-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quick-trigger-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.quick-trigger-btn:active {
+  transform: scale(0.95);
+  background: rgba(0, 229, 255, 0.15);
+  color: var(--accent-cyan);
+}

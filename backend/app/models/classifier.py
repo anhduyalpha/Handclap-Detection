@@ -1,0 +1,183 @@
+import torch
+import joblib
+import json
+import threading
+import numpy as np
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple
+from ..config import CHECKPOINTS_DIR, MLConfig
+from .architectures import ClapCNN2D
+
+class ClapClassifier:
+    """
+    Wrapper quản lý mô hình phân loại âm thanh vỗ tay (Stage 2).
+    Hỗ trợ cả PyTorch CNN và Scikit-Learn Ensemble, hỗ trợ Hot-Reload ngay khi train xong.
+    """
+    def __init__(self, config: Optional[MLConfig] = None):
+        self.config = config or MLConfig()
+        self.active_profile = self.config.active_profile
+        self.confidence_threshold = self.config.confidence_threshold
+        
+        self.cnn_model: Optional[ClapCNN2D] = None
+        self.sklearn_model = None
+        self.scaler = None
+        self.model_type = "hybrid" # "cnn" | "sklearn" | "hybrid"
+        self.lock = threading.Lock()
+        
+        # Nạp mô hình ban đầu
+        self.load_profile_model(self.active_profile)
+
+    def load_profile_model(self, profile_name: str = "default") -> bool:
+        """Nạp model từ checkpoints/ của profile tương ứng"""
+        with self.lock:
+            self.active_profile = profile_name
+            profile_ckpt_dir = CHECKPOINTS_DIR / profile_name
+            default_ckpt_dir = CHECKPOINTS_DIR / "default"
+            
+            target_dir = profile_ckpt_dir if profile_ckpt_dir.exists() else default_ckpt_dir
+            
+            cnn_loaded = False
+            sklearn_loaded = False
+
+            # 1. Thử load Sklearn Model (Random Forest / MLP / GBDT)
+            sklearn_path = target_dir / "model_sklearn.joblib"
+            scaler_path = target_dir / "scaler.joblib"
+            if sklearn_path.exists() and scaler_path.exists():
+                try:
+                    self.sklearn_model = joblib.load(sklearn_path)
+                    self.scaler = joblib.load(scaler_path)
+                    sklearn_loaded = True
+                except Exception as e:
+                    print(f"[Classifier] Error loading sklearn model: {e}")
+
+            # 2. Thử load PyTorch CNN Model
+            cnn_path = target_dir / "model_cnn.pt"
+            if cnn_path.exists():
+                try:
+                    model = ClapCNN2D(num_classes=2)
+                    state_dict = torch.load(cnn_path, map_location="cpu")
+                    model.load_state_dict(state_dict)
+                    model.eval()
+                    self.cnn_model = model
+                    cnn_loaded = True
+                except Exception as e:
+                    print(f"[Classifier] Error loading CNN model: {e}")
+
+            # Lưu timestamp của các file để tự động Hot-Reload khi có model mới
+            self._last_loaded_mtimes = {}
+            for f in [sklearn_path, scaler_path, cnn_path, target_dir / "meta.json"]:
+                if f.exists():
+                    self._last_loaded_mtimes[str(f)] = f.stat().st_mtime
+
+            if cnn_loaded and sklearn_loaded:
+                self.model_type = "hybrid"
+            elif cnn_loaded:
+                self.model_type = "cnn"
+            elif sklearn_loaded:
+                self.model_type = "sklearn"
+            else:
+                self.model_type = "rule_based_fallback"
+                
+            print(f"[Classifier] Loaded model for profile '{profile_name}' (Type: {self.model_type})")
+            return True
+
+    def check_and_reload_if_updated(self) -> bool:
+        """Kiểm tra xem file model trên ổ đĩa có thay đổi (do vừa train từ Windows đẩy sang) hay không"""
+        target_dir = CHECKPOINTS_DIR / self.active_profile
+        if not target_dir.exists():
+            target_dir = CHECKPOINTS_DIR / "default"
+            
+        has_update = False
+        for f in [target_dir / "model_cnn.pt", target_dir / "model_sklearn.joblib", target_dir / "meta.json"]:
+            if f.exists():
+                curr_mtime = f.stat().st_mtime
+                old_mtime = getattr(self, "_last_loaded_mtimes", {}).get(str(f), 0)
+                if curr_mtime > old_mtime + 0.5: # File mới hơn ít nhất 0.5s
+                    has_update = True
+                    break
+        
+        if has_update:
+            print(f"\n🔥 [Hot-Reload] Phát hiện Model mới vừa được nạp từ máy Windows/Training Studio!")
+            self.load_profile_model(self.active_profile)
+            print(f"✅ [Hot-Reload] Đã cập nhật Model mới vào bộ nhớ tức thì mà KHÔNG CẦN khởi động lại Server!\n")
+            return True
+        return False
+
+    def predict(
+        self, 
+        mel_spectrogram: Optional[np.ndarray] = None, 
+        feature_vector: Optional[np.ndarray] = None,
+        dsp_metrics: Optional[Dict[str, Any]] = None,
+        mel_spec: Optional[np.ndarray] = None,
+        feat_vec: Optional[np.ndarray] = None,
+        confidence_thresh: Optional[float] = None
+    ) -> Tuple[bool, float, Dict[str, Any]]:
+        """
+        Dự đoán xem âm thanh có phải là tiếng vỗ tay hay không.
+        
+        Returns:
+            (is_clap, confidence_score, details_dict)
+        """
+        if mel_spectrogram is None and mel_spec is not None:
+            mel_spectrogram = mel_spec
+        if feature_vector is None and feat_vec is not None:
+            feature_vector = feat_vec
+
+        with self.lock:
+            conf_scores = []
+            details = {"model_type": self.model_type, "profile": self.active_profile}
+
+            # 1. Dự đoán từ PyTorch CNN
+            if self.cnn_model is not None:
+                try:
+                    cnn_prob = self.cnn_model.predict_proba(mel_spectrogram)
+                    conf_scores.append(cnn_prob)
+                    details["cnn_prob"] = round(cnn_prob, 4)
+                except Exception as e:
+                    print(f"[Classifier] CNN inference error: {e}")
+
+            # 2. Dự đoán từ Sklearn Model
+            if self.sklearn_model is not None and self.scaler is not None:
+                try:
+                    scaled_feat = self.scaler.transform(feature_vector.reshape(1, -1))
+                    if hasattr(self.sklearn_model, "predict_proba"):
+                        sk_prob = float(self.sklearn_model.predict_proba(scaled_feat)[0, 1])
+                    else:
+                        sk_prob = float(self.sklearn_model.predict(scaled_feat)[0])
+                    conf_scores.append(sk_prob)
+                    details["sklearn_prob"] = round(sk_prob, 4)
+                except Exception as e:
+                    print(f"[Classifier] Sklearn inference error: {e}")
+
+            # 3. Tổng hợp điểm tự tin (Weighted Ensemble)
+            if self.cnn_model is not None and self.sklearn_model is not None and len(conf_scores) == 2:
+                final_confidence = float(0.75 * conf_scores[0] + 0.25 * conf_scores[1])
+            elif conf_scores:
+                final_confidence = float(np.mean(conf_scores))
+            else:
+                # Fallback rule-based nếu chưa có file weights
+                final_confidence = self._fallback_rule_score(dsp_metrics)
+                details["rule_fallback"] = True
+
+            effective_thresh = confidence_thresh if confidence_thresh is not None else self.confidence_threshold
+            details["final_confidence"] = round(final_confidence, 4)
+            details["threshold_used"] = round(effective_thresh, 4)
+            is_clap = final_confidence >= effective_thresh
+
+            return is_clap, final_confidence, details
+
+    def _fallback_rule_score(self, dsp_metrics: Optional[Dict[str, Any]]) -> float:
+        """Đánh giá xác suất dựa trên DSP metrics khi khởi động lần đầu chưa train model"""
+        if not dsp_metrics:
+            return 0.5
+            
+        score = 0.0
+        if dsp_metrics.get("crest_factor", 0) > 4.0:
+            score += 0.3
+        if dsp_metrics.get("hf_ratio", 0) > 0.40:
+            score += 0.35
+        if dsp_metrics.get("onset_ratio", 0) > 2.5:
+            score += 0.25
+        if dsp_metrics.get("peak_amp", 0) > 0.08:
+            score += 0.1
+        return min(1.0, score)
