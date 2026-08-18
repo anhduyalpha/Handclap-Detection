@@ -106,7 +106,7 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
         clip_audio = np.zeros(clip_samples, dtype=np.float32)
         clip_audio[:len(audio_raw)] = audio_raw
 
-    # 2. Lưu vào thư mục dataset của profile trên Linux
+    # 2. Lưu vào thư mục dataset của profile trên Linux (bản sao dự phòng)
     valid_category = req.category if req.category in CATEGORIES else "false_positives"
     sample_info = dataset_mgr.save_sample(
         profile_name=req.profile_name,
@@ -114,14 +114,7 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
         audio=clip_audio
     )
 
-    # 3. Đánh dấu trạng thái trong TriggerHistoryBuffer
-    updated_record = trigger_history.mark_false_positive(
-        event_id=req.event_id,
-        category=valid_category,
-        has_retrained=req.auto_retrain
-    )
-
-    # 4. Tự động chuyển tiếp đoạn audio sang máy tính Windows Training Studio
+    # 3. Tự động chuyển tiếp đoạn audio sang máy tính Windows Training Studio
     if getattr(settings, "windows_studio_url", None):
         _forward_audio_to_windows_async(
             profile_name=req.profile_name,
@@ -130,29 +123,24 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
             target_url=settings.windows_studio_url
         )
 
-    # 5. Tùy chọn: Tự động Train lại & Hot-Reload trên Linux
-    retrain_metrics = None
-    if req.auto_retrain:
-        try:
-            retrain_metrics = trainer.train_profile(
-                profile_name=req.profile_name,
-                augment_factor=12,
-                cnn_epochs=20
-            )
-            live_engine.reload_model(req.profile_name)
-        except Exception as e:
-            print(f"[MarkFalsePositive] Retrain note: {e}")
+    # 4. Xóa sự kiện này khỏi lịch sử kích hoạt trên Server
+    trigger_history.remove_event(req.event_id)
+
+    # 5. Phát sóng thông báo WebSocket để Web giao diện xóa ngay dòng sự kiện này
+    if live_engine.broadcast_callback:
+        live_engine.broadcast_callback({
+            "type": "TRIGGER_EVENT_REMOVED",
+            "event_id": req.event_id
+        })
 
     cat_name = CATEGORIES.get(valid_category, valid_category)
     return {
         "status": "success",
-        "message": f"🎉 Đã lưu đoạn âm thanh báo giả vào danh mục '{cat_name}' và tự động chuyển sang Windows Training Studio!",
+        "message": f"🎉 Đã chuyển đoạn âm thanh báo giả sang Dataset máy Windows và xóa khỏi danh sách trên Server!",
         "event_id": req.event_id,
         "sample": sample_info,
-        "retrained": req.auto_retrain,
         "forwarded_to_windows": bool(getattr(settings, "windows_studio_url", None)),
-        "metrics": retrain_metrics,
-        "event": updated_record
+        "removed_from_history": True
     }
 
 @router.delete("/clear")
@@ -160,3 +148,4 @@ def clear_trigger_history():
     """Xóa sạch lịch sử kích hoạt"""
     trigger_history.clear()
     return {"status": "success", "message": "Đã xóa toàn bộ lịch sử kích hoạt"}
+

@@ -89,6 +89,13 @@ class TriggerHistoryBuffer:
                     return self._to_public_dict(r)
         return None
 
+    def remove_event(self, event_id: str) -> bool:
+        """Xóa một sự kiện cụ thể khỏi hàng đợi lịch sử"""
+        with self.lock:
+            orig_len = len(self.history)
+            self.history = [r for r in self.history if r["id"] != event_id]
+            return len(self.history) < orig_len
+
     def clear(self):
         """Xóa toàn bộ lịch sử"""
         with self.lock:

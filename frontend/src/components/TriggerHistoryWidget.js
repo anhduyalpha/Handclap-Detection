@@ -38,6 +38,14 @@ export class TriggerHistoryWidget {
         this.addRealtimeEvent(data.event);
       }
     });
+
+    // Lắng nghe sự kiện xóa sau khi đã báo giả và đẩy sang Windows
+    wsClient.on('TRIGGER_EVENT_REMOVED', (data) => {
+      if (data && data.event_id) {
+        this.events = this.events.filter(e => e.id !== data.event_id);
+        this.renderEventList();
+      }
+    });
   }
 
   render() {
@@ -55,7 +63,7 @@ export class TriggerHistoryWidget {
         </div>
 
         <div class="history-description" style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.85rem; line-height: 1.4;">
-          Khi thấy đèn bật/tắt nhầm, bấm <strong>🚫 Báo Giả</strong> để AI tự trích xuất đoạn âm thanh đó làm mẫu Nhiễu và học lại ngay lập tức.
+          Khi thấy đèn bật/tắt nhầm, bấm <strong>🚫 Báo Giả</strong> để tự động trích xuất đoạn âm thanh đó, đẩy sang bộ Dataset máy tính Windows và xóa khỏi lịch sử Server.
         </div>
 
         <div class="trigger-events-list" id="trigger-events-list">
@@ -70,18 +78,18 @@ export class TriggerHistoryWidget {
         <div class="modal-dialog" style="background: #111827; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 12px; width: 90%; max-width: 440px; padding: 1.25rem; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
             <div style="font-weight: 700; color: #ef4444; display: flex; align-items: center; gap: 0.4rem;">
-              <span>🚫</span> Đánh Dấu Báo Giả & Học Lại
+              <span>🚫</span> Báo Giả $\rightarrow$ Đẩy Sang Dataset Windows
             </div>
             <button class="btn btn-secondary btn-sm" id="btn-close-fp-modal" style="padding: 2px 6px;">✕</button>
           </div>
 
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
-            Đoạn âm thanh vừa kích hoạt là loại tiếng ồn nào trong phòng của bạn?
+            Đoạn âm thanh này sẽ được lưu và chuyển tiếp ngay lập tức sang máy tính Windows để làm mẫu huấn luyện:
           </p>
 
-          <div class="form-group" style="margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 1.25rem;">
             <label style="font-size: 0.78rem; color: var(--text-primary); font-weight: 600; margin-bottom: 0.35rem; display: block;">
-              Chọn danh mục lưu mẫu:
+              Chọn danh mục lưu mẫu trên Windows:
             </label>
             <select class="form-select" id="select-fp-category" style="width: 100%; background: #1f2937; border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.5rem; border-radius: 6px; font-size: 0.85rem;">
               <option value="false_positives" selected>🚫 Mẫu Báo Giả Chuyên Biệt (Hard Negatives - Khuyên dùng)</option>
@@ -93,18 +101,10 @@ export class TriggerHistoryWidget {
             </select>
           </div>
 
-          <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 0.75rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-              <div style="font-size: 0.82rem; font-weight: 600; color: #818cf8;">⚡ Tự Động Huấn Luyện Lại Ngay</div>
-              <div style="font-size: 0.7rem; color: var(--text-secondary);">Hot-reload mô hình trong 2s để không bao giờ nhận nhầm âm thanh này nữa.</div>
-            </div>
-            <input type="checkbox" id="check-fp-autotrain" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #6366f1;">
-          </div>
-
           <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
             <button class="btn btn-secondary btn-sm" id="btn-cancel-fp" style="padding: 0.45rem 0.85rem;">Hủy</button>
             <button class="btn btn-danger btn-sm" id="btn-confirm-fp" style="background: #ef4444; border-color: #ef4444; color: #fff; padding: 0.45rem 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.35rem;">
-              <span>💾</span> Lưu Mẫu & Học Lại
+              <span>🚀</span> Đẩy Sang Windows & Xóa Lịch Sử
             </button>
           </div>
         </div>
@@ -251,37 +251,31 @@ export class TriggerHistoryWidget {
   async executeFalsePositiveMining() {
     if (!this.selectedEventForMining) return;
     const eventId = this.selectedEventForMining;
-    const category = document.getElementById('select-fp-category')?.value || 'speech';
-    const autoRetrain = document.getElementById('check-fp-autotrain')?.checked ?? true;
+    const category = document.getElementById('select-fp-category')?.value || 'false_positives';
     const confirmBtn = document.getElementById('btn-confirm-fp');
 
     if (confirmBtn) {
       confirmBtn.disabled = true;
-      confirmBtn.innerHTML = `<span>⏳</span> Đang lưu & Huấn luyện...`;
+      confirmBtn.innerHTML = `<span>⏳</span> Đang chuyển sang Windows...`;
     }
 
     try {
-      const res = await ApiClient.markFalsePositive(eventId, this.activeProfile, category, autoRetrain);
+      const res = await ApiClient.markFalsePositive(eventId, this.activeProfile, category, false);
       if (res && res.status === 'success') {
-        // Cập nhật trạng thái sự kiện trong bộ nhớ local
-        const ev = this.events.find(e => e.id === eventId);
-        if (ev) {
-          ev.is_false_positive = true;
-          ev.marked_category = category;
-          ev.has_retrained = autoRetrain;
-        }
+        // Xóa sự kiện khỏi danh sách hiển thị trên Server
+        this.events = this.events.filter(e => e.id !== eventId);
         this.renderEventList();
         this.closeModal();
-        alert(res.message || '✅ Đã lưu mẫu và huấn luyện thành công!');
+        alert(res.message || '🎉 Đã chuyển đoạn âm thanh sang máy Windows và xóa khỏi danh sách trên Server!');
       } else {
-        alert('Lỗi: ' + (res?.message || 'Không thể lưu mẫu'));
+        alert('Lỗi: ' + (res?.message || 'Không thể chuyển mẫu'));
       }
     } catch (err) {
       alert('Lỗi xử lý: ' + err.message);
     } finally {
       if (confirmBtn) {
         confirmBtn.disabled = false;
-        confirmBtn.innerHTML = `<span>💾</span> Lưu Mẫu & Học Lại`;
+        confirmBtn.innerHTML = `<span>🚀</span> Đẩy Sang Windows & Xóa Lịch Sử`;
       }
     }
   }
