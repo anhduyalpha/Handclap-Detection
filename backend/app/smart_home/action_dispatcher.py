@@ -36,15 +36,19 @@ class ActionDispatcher:
                 bulb_state = virtual_bulb.next_color(source="clap_single")
             elif action_name == "party_mode":
                 bulb_state = virtual_bulb.party_mode(source="clap_single")
+            else:
+                action_name = "none"
 
         elif pattern == "double":
             action_name = settings.light.double_clap_action
-            if action_name == "next_color":
-                bulb_state = virtual_bulb.next_color(source="clap_double")
-            elif action_name == "toggle_power":
+            if action_name == "toggle_power":
                 bulb_state = virtual_bulb.toggle_power(source="clap_double")
+            elif action_name == "next_color":
+                bulb_state = virtual_bulb.next_color(source="clap_double")
             elif action_name == "party_mode":
                 bulb_state = virtual_bulb.party_mode(source="clap_double")
+            else:
+                action_name = "none"
 
         elif pattern == "triple":
             action_name = settings.light.triple_clap_action
@@ -54,6 +58,8 @@ class ActionDispatcher:
                 bulb_state = virtual_bulb.next_color(source="clap_triple")
             elif action_name == "toggle_power":
                 bulb_state = virtual_bulb.toggle_power(source="clap_triple")
+            else:
+                action_name = "none"
 
         if bulb_state is None:
             bulb_state = virtual_bulb.get_state()
@@ -75,17 +81,23 @@ class ActionDispatcher:
             except Exception as e:
                 print(f"[ActionDispatcher] Broadcast error: {e}")
 
-        # 2. Gửi Webhook không đồng bộ ra ngoài (Home Assistant / ESP32) với Debounce Lock
-        if settings.light.webhook_url:
+        # 2. Gửi Webhook không đồng bộ ra ngoài (Home Assistant / ESP32) nếu action != 'none'
+        if settings.light.webhook_url and action_name not in ("none", "", None):
             threading.Thread(
                 target=self._send_external_webhook, 
                 args=(settings.light.webhook_url, event_payload),
                 daemon=True
             ).start()
+        elif action_name in ("none", "", None):
+            print(f"[ActionDispatcher] Pattern '{pattern}' ({count} clap(s)) mapped to 'none' -> Skipped webhook.")
 
     def _send_external_webhook(self, url: str, payload: Dict[str, Any]):
         pattern = payload.get("pattern", "single")
         count = payload.get("count", 1)
+        action_name = payload.get("action", "")
+
+        if not action_name or action_name == "none":
+            return
 
         # Chống dội / chống gửi lặp lệnh webhook (Debounce Lock)
         with self.debounce_lock:

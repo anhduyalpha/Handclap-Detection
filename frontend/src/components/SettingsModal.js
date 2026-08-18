@@ -98,6 +98,7 @@ export class SettingsModal {
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <span style="font-size: 0.85rem;">👏 1 Vỗ (Single):</span>
                   <select class="form-select" id="select-act-single" style="width: 60%;">
+                    <option value="none" selected>🚫 Bỏ qua (Chống nhận nhầm 100%)</option>
                     <option value="toggle_power">Bật / Tắt Đèn (Toggle Power)</option>
                     <option value="next_color">Đổi Màu (Next RGB Color)</option>
                     <option value="party_mode">Party Mode</option>
@@ -106,17 +107,19 @@ export class SettingsModal {
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <span style="font-size: 0.85rem;">👏👏 2 Vỗ (Double):</span>
                   <select class="form-select" id="select-act-double" style="width: 60%;">
+                    <option value="toggle_power" selected>Bật / Tắt Đèn (Toggle Power)</option>
                     <option value="next_color">Đổi Màu (Next RGB Color)</option>
-                    <option value="toggle_power">Bật / Tắt Đèn (Toggle Power)</option>
                     <option value="party_mode">Party Mode</option>
+                    <option value="none">🚫 Bỏ qua (Không làm gì)</option>
                   </select>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <span style="font-size: 0.85rem;">👏👏👏 3 Vỗ (Triple):</span>
                   <select class="form-select" id="select-act-triple" style="width: 60%;">
-                    <option value="party_mode">Party Strobe Mode</option>
+                    <option value="party_mode" selected>Party Strobe Mode</option>
                     <option value="next_color">Đổi Màu (Next RGB Color)</option>
                     <option value="toggle_power">Bật / Tắt Đèn (Toggle Power)</option>
+                    <option value="none">🚫 Bỏ qua (Không làm gì)</option>
                   </select>
                 </div>
               </div>
