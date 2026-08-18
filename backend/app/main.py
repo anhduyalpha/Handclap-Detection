@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, CHECKPOINTS_DIR, settings
-from .api import ws_audio, routes_training, routes_devices
+from .api import ws_audio, routes_training, routes_devices, routes_events
 from .training.trainer import PersonalModelTrainer
 from .core.live_engine import live_engine
 from .core.server_mic import server_mic
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(ws_audio.router)
 app.include_router(routes_training.router)
 app.include_router(routes_devices.router)
+app.include_router(routes_events.router)
 
 @app.on_event("startup")
 def startup_event():

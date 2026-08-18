@@ -176,6 +176,37 @@ export const ApiClient = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile_name: profileName })
     });
-    return await res.json();
+    return await safeJson(res);
+  },
+
+  // --- TRIGGER HISTORY & FALSE POSITIVE MINING ---
+  async getRecentTriggers() {
+    try {
+      const res = await fetch(`${API_BASE}/events/recent-triggers`);
+      return await safeJson(res);
+    } catch {
+      return { status: 'error', total: 0, events: [] };
+    }
+  },
+
+  async markFalsePositive(eventId, profileName = 'default', category = 'noises', autoRetrain = true) {
+    const res = await fetch(`${API_BASE}/events/mark-false-positive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_id: eventId,
+        profile_name: profileName,
+        category: category,
+        auto_retrain: autoRetrain
+      })
+    });
+    return await safeJson(res);
+  },
+
+  async clearTriggerHistory() {
+    const res = await fetch(`${API_BASE}/events/clear`, {
+      method: 'DELETE'
+    });
+    return await safeJson(res);
   }
 };

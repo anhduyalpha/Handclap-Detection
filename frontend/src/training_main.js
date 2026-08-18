@@ -13,6 +13,7 @@
 import './styles/main.css';
 import './styles/training_studio.css';
 import confetti from 'canvas-confetti';
+import { TriggerHistoryWidget } from './components/TriggerHistoryWidget.js';
 
 const CATEGORY_NAMES = {
   claps: '👏 Vỗ Tay',
@@ -42,6 +43,7 @@ class TrainingStudioApp {
     this.isSandboxActive = false;
     this.sandboxWs = null;
     this.sandboxClapCount = 0;
+    this.triggerHistory = null;
 
     this.init();
   }
@@ -69,6 +71,9 @@ class TrainingStudioApp {
     await this.loadProfiles();
     await this.loadSamples();
     this.setupSandboxMic();
+    if (document.getElementById('training-trigger-history-slot')) {
+      this.triggerHistory = new TriggerHistoryWidget('training-trigger-history-slot', { profileName: this.activeProfile });
+    }
   }
 
   bindDOM() {

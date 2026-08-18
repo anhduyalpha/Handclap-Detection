@@ -8,6 +8,7 @@ from .dsp_detector import DSPTransientDetector
 from .feature_extractor import AudioFeatureExtractor
 from .pattern_matcher import ClapPatternMatcher
 from .noise_estimator import AdaptiveNoiseFloorEstimator
+from .trigger_history import trigger_history
 from ..models.classifier import ClapClassifier
 from ..smart_home.action_dispatcher import action_dispatcher
 from ..config import settings
@@ -16,7 +17,7 @@ class LiveDetectionEngine:
     """
     Cỗ máy nhận diện âm thanh thời gian thực (Dual-Stage Live Engine).
     Kết nối đồng bộ toàn bộ luồng xử lý:
-    Stream Audio (WebSocket) -> Ring Buffer -> Adaptive Noise Tracking -> Stage 1 DSP -> Stage 2 ML -> Pattern Matcher -> Action Dispatcher
+    Stream Audio (WebSocket) -> Ring Buffer -> Adaptive Noise Tracking -> Stage 1 DSP -> Stage 2 ML -> Pattern Matcher -> Action Dispatcher -> Trigger History
     """
     def __init__(self, broadcast_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
         self.sample_rate = settings.audio.sample_rate
@@ -54,6 +55,29 @@ class LiveDetectionEngine:
         """Xử lý khi PatternMatcher phát hiện chuỗi vỗ tay hoàn chỉnh"""
         print(f"[LiveEngine] [Pattern Matched] Pattern='{pattern}', Count={count} clap(s) -> Dispatching action & Webhook...")
         action_dispatcher.dispatch_pattern(pattern, count, events_meta)
+
+        # Trích xuất 500ms âm thanh quanh cú kích hoạt lưu vào TriggerHistory
+        clip_samples = int(self.sample_rate * 0.5)
+        audio_clip = self.ring_buffer.get_recent(clip_samples)
+
+        avg_conf = sum(e.get("confidence", 0.8) for e in events_meta) / max(1, len(events_meta)) if events_meta else 0.8
+        dsp_metrics = events_meta[-1] if events_meta else {}
+
+        record = trigger_history.add_event(
+            pattern=pattern,
+            count=count,
+            confidence=avg_conf,
+            audio_clip=audio_clip,
+            dsp_metrics=dsp_metrics,
+            events_meta=events_meta
+        )
+
+        # Phát sóng sự kiện TRIGGER_EVENT tới WebSocket clients
+        if self.broadcast_callback:
+            self.broadcast_callback({
+                "type": "TRIGGER_EVENT",
+                "event": record
+            })
 
     def process_chunk(self, audio_chunk: np.ndarray) -> Dict[str, Any]:
         """

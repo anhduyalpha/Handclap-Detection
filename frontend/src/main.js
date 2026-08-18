@@ -11,6 +11,7 @@ import { SmartLightBulb } from './components/SmartLightBulb.js';
 import { AudioVisualizer } from './components/AudioVisualizer.js';
 import { TrainingStudio } from './components/TrainingStudio.js';
 import { SettingsModal } from './components/SettingsModal.js';
+import { TriggerHistoryWidget } from './components/TriggerHistoryWidget.js';
 
 class App {
   constructor() {
@@ -18,6 +19,7 @@ class App {
     this.visualizer = null;
     this.trainingStudio = null;
     this.settingsModal = null;
+    this.triggerHistory = null;
     this.init();
   }
 
@@ -34,6 +36,9 @@ class App {
     }
     if (document.getElementById('settings-modal-slot')) {
       this.settingsModal = new SettingsModal('settings-modal-slot');
+    }
+    if (document.getElementById('trigger-history-slot')) {
+      this.triggerHistory = new TriggerHistoryWidget('trigger-history-slot');
     }
 
     // 2. Kết nối WebSocket
