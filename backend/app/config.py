@@ -91,6 +91,7 @@ class AppSettings(BaseModel):
     ml: MLConfig = MLConfig()
     pattern: PatternConfig = PatternConfig()
     light: SmartLightConfig = SmartLightConfig()
+    windows_studio_url: str = os.getenv("WINDOWS_STUDIO_URL", "http://192.168.2.134:8001")
 
 settings = AppSettings()
 

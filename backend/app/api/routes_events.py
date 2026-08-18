@@ -1,3 +1,7 @@
+import base64
+import json
+import threading
+import urllib.request
 import numpy as np
 from fastapi import APIRouter, HTTPException, Response, Body
 from pydantic import BaseModel
@@ -13,6 +17,35 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 dataset_mgr = DatasetManager(sample_rate=settings.audio.sample_rate)
 trainer = PersonalModelTrainer(sample_rate=settings.audio.sample_rate)
+
+def _forward_audio_to_windows_async(profile_name: str, category: str, audio_clip: np.ndarray, target_url: str):
+    """Gửi bản sao âm thanh báo giả trực tiếp sang máy tính Windows (chạy nền ngầm không block)"""
+    def _worker():
+        try:
+            url = target_url.rstrip("/") + "/api/training/sample"
+            b64_audio = base64.b64encode(audio_clip.astype(np.float32).tobytes()).decode("ascii")
+            payload = json.dumps({
+                "profile_name": profile_name,
+                "category": category,
+                "audio_base64": b64_audio,
+                "format": "float32"
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                url, 
+                data=payload, 
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                if resp.status in (200, 201):
+                    print(f"[ForwardToWindows] [SUCCESS] Audio forwarded to Windows Studio: {url}")
+                else:
+                    print(f"[ForwardToWindows] Warning: Windows returned HTTP {resp.status}")
+        except Exception as err:
+            print(f"[ForwardToWindows] Info: Windows Studio ({target_url}) is offline/unreachable: {err}")
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 class MarkFalsePositiveRequest(BaseModel):
     event_id: str
@@ -44,8 +77,9 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
     """
     Đánh dấu sự kiện là Báo Giả (False Positive / Hard-Negative Mining):
     1. Trích xuất đoạn âm thanh 250ms chuẩn hóa từ sự kiện kích hoạt.
-    2. Lưu trực tiếp vào tập dữ liệu nhiễu của Profile (Speech / Typing / Ambient / Snaps / Noises).
-    3. Tùy chọn: Tự động kích hoạt Huấn luyện lại và Hot-Reload mô hình ngay lập tức!
+    2. Lưu trực tiếp vào tập dữ liệu nhiễu của Profile trên Linux.
+    3. Tự động chuyển tiếp (Forward) đoạn âm thanh sang máy tính Windows Training Studio.
+    4. Tùy chọn: Tự động kích hoạt Huấn luyện lại và Hot-Reload mô hình ngay lập tức!
     """
     record = trigger_history.get_event_by_id(req.event_id)
     if not record:
@@ -72,8 +106,8 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
         clip_audio = np.zeros(clip_samples, dtype=np.float32)
         clip_audio[:len(audio_raw)] = audio_raw
 
-    # 2. Lưu vào thư mục dataset của profile
-    valid_category = req.category if req.category in CATEGORIES else "noises"
+    # 2. Lưu vào thư mục dataset của profile trên Linux
+    valid_category = req.category if req.category in CATEGORIES else "false_positives"
     sample_info = dataset_mgr.save_sample(
         profile_name=req.profile_name,
         category=valid_category,
@@ -87,7 +121,16 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
         has_retrained=req.auto_retrain
     )
 
-    # 4. Tùy chọn: Tự động Train lại & Hot-Reload
+    # 4. Tự động chuyển tiếp đoạn audio sang máy tính Windows Training Studio
+    if getattr(settings, "windows_studio_url", None):
+        _forward_audio_to_windows_async(
+            profile_name=req.profile_name,
+            category=valid_category,
+            audio_clip=clip_audio,
+            target_url=settings.windows_studio_url
+        )
+
+    # 5. Tùy chọn: Tự động Train lại & Hot-Reload trên Linux
     retrain_metrics = None
     if req.auto_retrain:
         try:
@@ -103,10 +146,11 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
     cat_name = CATEGORIES.get(valid_category, valid_category)
     return {
         "status": "success",
-        "message": f"🎉 Đã lưu đoạn âm thanh báo giả vào danh mục '{cat_name}'!" + (" Mô hình AI đã được huấn luyện lại và kích hoạt ngay lập tức!" if req.auto_retrain else ""),
+        "message": f"🎉 Đã lưu đoạn âm thanh báo giả vào danh mục '{cat_name}' và tự động chuyển sang Windows Training Studio!",
         "event_id": req.event_id,
         "sample": sample_info,
         "retrained": req.auto_retrain,
+        "forwarded_to_windows": bool(getattr(settings, "windows_studio_url", None)),
         "metrics": retrain_metrics,
         "event": updated_record
     }

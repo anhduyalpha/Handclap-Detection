@@ -27,6 +27,7 @@ class SettingsUpdateRequest(BaseModel):
     double_clap_action: Optional[str] = None
     triple_clap_action: Optional[str] = None
     webhook_url: Optional[str] = None
+    windows_studio_url: Optional[str] = None
     # Cấu hình Căn chỉnh độ ồn phòng liên tục
     adaptive_noise_enabled: Optional[bool] = None
     adaptation_speed: Optional[float] = None
@@ -73,7 +74,8 @@ def get_settings():
         "noise_estimator": live_engine.noise_estimator.get_state(),
         "ml": settings.ml.model_dump(),
         "pattern": settings.pattern.model_dump(),
-        "light": settings.light.model_dump()
+        "light": settings.light.model_dump(),
+        "windows_studio_url": getattr(settings, "windows_studio_url", "http://192.168.2.134:8001")
     }
 
 @router.post("/settings")
@@ -110,5 +112,7 @@ def update_settings(req: SettingsUpdateRequest):
         settings.light.triple_clap_action = req.triple_clap_action
     if req.webhook_url is not None:
         settings.light.webhook_url = req.webhook_url
+    if req.windows_studio_url is not None:
+        settings.windows_studio_url = req.windows_studio_url
 
     return {"status": "success", "settings": get_settings()}

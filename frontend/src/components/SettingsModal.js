@@ -128,6 +128,15 @@ export class SettingsModal {
               <input type="text" class="form-input" id="input-webhook" placeholder="http://192.168.1.100/api/relay hoặc Home Assistant webhook">
             </div>
 
+            <!-- Windows Studio URL (Real-time Forwarding) -->
+            <div class="form-group" style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 0.85rem;">
+              <div class="form-label" style="color: #a5b4fc; font-weight: 600;">💻 URL Máy Windows Studio (Tự động nhận mẫu Báo Giả)</div>
+              <input type="text" class="form-input" id="input-windows-url" placeholder="http://192.168.2.134:8001">
+              <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+                Khi bấm Báo Giả trên Linux, đoạn âm thanh sẽ tự động truyền trực tiếp sang máy tính Windows này để lưu vào tập huấn luyện.
+              </small>
+            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
               <button type="button" class="btn btn-secondary" id="btn-cancel-settings">Huỷ</button>
               <button type="submit" class="btn btn-primary">Lưu Cài Đặt</button>
@@ -185,7 +194,8 @@ export class SettingsModal {
         single_clap_action: this.container.querySelector('#select-act-single').value,
         double_clap_action: this.container.querySelector('#select-act-double').value,
         triple_clap_action: this.container.querySelector('#select-act-triple').value,
-        webhook_url: this.container.querySelector('#input-webhook').value
+        webhook_url: this.container.querySelector('#input-webhook').value,
+        windows_studio_url: this.container.querySelector('#input-windows-url')?.value || 'http://192.168.2.134:8001'
       };
 
       try {
@@ -199,7 +209,7 @@ export class SettingsModal {
 
   populateForm() {
     if (!this.settings) return;
-    const { dsp, adaptive_noise, ml, pattern, light } = this.settings;
+    const { dsp, adaptive_noise, ml, pattern, light, windows_studio_url } = this.settings;
 
     const inputAdaptive = this.container.querySelector('#input-adaptive-enabled');
     const inputMargin = this.container.querySelector('#input-margin-factor');
@@ -243,6 +253,11 @@ export class SettingsModal {
       if (sDouble) sDouble.value = light.double_clap_action;
       if (sTriple) sTriple.value = light.triple_clap_action;
       if (inWebhook) inWebhook.value = light.webhook_url || '';
+    }
+
+    const inWindowsUrl = this.container.querySelector('#input-windows-url');
+    if (inWindowsUrl) {
+      inWindowsUrl.value = windows_studio_url || 'http://192.168.2.134:8001';
     }
   }
 
