@@ -14,7 +14,6 @@ import sys
 import time
 import shutil
 import subprocess
-import webbrowser
 from pathlib import Path
 
 # Đảm bảo UTF-8 trên console Windows
@@ -102,19 +101,8 @@ def main():
     )
 
     print("\n🎉 Training Studio Pro đã sẵn sàng!")
-    print("[+] Đang tự động mở trình duyệt web...")
+    print("👉 Mở trình duyệt tại: http://localhost:5174/training.html")
     print("[+] Nhấn Ctrl+C trong terminal này để dừng Studio.\n")
-
-    # Mở trình duyệt sau 1.5s
-    def open_browser():
-        time.sleep(1.5)
-        try:
-            webbrowser.open("http://localhost:5174/training.html")
-        except Exception:
-            pass
-
-    import threading
-    threading.Thread(target=open_browser, daemon=True).start()
 
     def cleanup(signum=None, frame=None):
         print("\n[*] Đang tắt Training Studio...")
