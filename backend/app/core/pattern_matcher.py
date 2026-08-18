@@ -61,8 +61,7 @@ class ClapPatternMatcher:
             if self.first_clap_time is None or (now - self.first_clap_time) * 1000.0 > self.max_interval_ms:
                 self.first_clap_time = now
                 self.first_clap_meta = clap_meta
-                print(f"[InstantPatternMatcher] 👏 Step 1/2 armed at {now:.3f}. Waiting for 2nd clap ({self.min_interval_ms}-{self.max_interval_ms}ms)...")
-                return "step_1"
+                return None
 
             # 3. Đã có cú vỗ 1 hợp lệ trong cửa sổ -> Kiểm tra cú vỗ 2
             delta_ms = (now - self.first_clap_time) * 1000.0

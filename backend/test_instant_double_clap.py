@@ -22,10 +22,10 @@ def test_instant_double_clap():
         on_pattern_callback=on_pattern
     )
 
-    print("[*] 1. Testing Single Clap (Should only arm Step 1, NO action triggered)...")
+    print("[*] 1. Testing Single Clap (Should arm silently, NO action triggered)...")
     res1 = matcher.register_clap(0.85)
     print(f"    [+] Clap 1 response: {res1}")
-    assert res1 == "step_1"
+    assert res1 is None
     assert len(dispatched_events) == 0
 
     print("\n[*] 2. Testing 2nd Clap at 150ms (Should trigger Double Clap INSTANTLY)...")
@@ -49,12 +49,12 @@ def test_instant_double_clap():
     print("\n[*] 4. Testing Interval Expiry (> 550ms between claps)...")
     time.sleep(0.50) # Wait out cooldown
     res_a = matcher.register_clap(0.88)
-    assert res_a == "step_1"
+    assert res_a is None
 
     time.sleep(0.60) # Wait > 550ms
     res_b = matcher.register_clap(0.89)
-    print(f"    [+] Clap after expiry response: {res_b} (Must reset as new Step 1)")
-    assert res_b == "step_1"
+    print(f"    [+] Clap after expiry response: {res_b} (Silently reset as new 1st clap)")
+    assert res_b is None
     assert len(dispatched_events) == 1
 
     print("\n[SUCCESS] Instant Double-Clap Engine verified 100%!")

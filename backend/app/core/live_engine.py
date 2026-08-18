@@ -206,7 +206,7 @@ class LiveDetectionEngine:
                         print(f"[LiveEngine] [CLAP CONFIRMED] Confidence={confidence:.2f} -> Registering with InstantPatternMatcher...")
 
                         # Ghi nhận vào bộ đếm nhịp vỗ tay tức thời (Instant Double-Clap)
-                        pattern_res = self.pattern_matcher.register_clap(
+                        self.pattern_matcher.register_clap(
                             confidence=confidence,
                             meta={
                                 "timestamp": now,
@@ -216,16 +216,8 @@ class LiveDetectionEngine:
                             }
                         )
 
-                        # Bắn sự kiện tức thì CLAP_STEP và CLAP_HIT để UI phản hồi nhịp 1/2 và 2/2
+                        # Bắn sự kiện tức thì CLAP_HIT để UI phản hồi sóng âm
                         if self.broadcast_callback:
-                            step_val = 1 if pattern_res == "step_1" else (2 if pattern_res == "double" else 1)
-                            self.broadcast_callback({
-                                "type": "CLAP_STEP",
-                                "step": step_val,
-                                "total": 2,
-                                "confidence": round(confidence, 3),
-                                "timestamp": now
-                            })
                             self.broadcast_callback({
                                 "type": "CLAP_HIT",
                                 "confidence": round(confidence, 3),
