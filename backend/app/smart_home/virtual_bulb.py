@@ -36,7 +36,7 @@ class VirtualSmartBulb:
             "last_updated": self.last_updated
         }
 
-    def toggle_power(self, source: str = "clap_single") -> Dict[str, Any]:
+    def toggle_power(self, source: str = "clap_double") -> Dict[str, Any]:
         self.power = not self.power
         self.last_triggered_by = source
         self.last_updated = time.time()

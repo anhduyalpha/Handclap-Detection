@@ -73,8 +73,8 @@ class ActionDispatcher:
             print(f"[ActionDispatcher] Pattern '{pattern}' ({count} clap(s)) mapped to 'none' -> Skipped webhook.")
 
     def _send_external_webhook(self, url: str, payload: Dict[str, Any]):
-        pattern = payload.get("pattern", "single")
-        count = payload.get("count", 1)
+        pattern = payload.get("pattern", "double")
+        count = payload.get("count", 2)
         action_name = payload.get("action", "")
 
         if not action_name or action_name == "none":

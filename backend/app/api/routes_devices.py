@@ -23,9 +23,7 @@ class SettingsUpdateRequest(BaseModel):
     confidence_threshold: Optional[float] = None
     min_inter_clap_ms: Optional[int] = None
     max_inter_clap_ms: Optional[int] = None
-    single_clap_action: Optional[str] = None
     double_clap_action: Optional[str] = None
-    triple_clap_action: Optional[str] = None
     webhook_url: Optional[str] = None
     windows_studio_url: Optional[str] = None
     linux_server_url: Optional[str] = None
@@ -108,12 +106,8 @@ def update_settings(req: SettingsUpdateRequest):
         cooldown_ms=settings.pattern.cooldown_ms
     )
 
-    if req.single_clap_action is not None:
-        settings.light.single_clap_action = req.single_clap_action
     if req.double_clap_action is not None:
         settings.light.double_clap_action = req.double_clap_action
-    if req.triple_clap_action is not None:
-        settings.light.triple_clap_action = req.triple_clap_action
     if req.webhook_url is not None:
         settings.light.webhook_url = req.webhook_url
     if req.windows_studio_url is not None:

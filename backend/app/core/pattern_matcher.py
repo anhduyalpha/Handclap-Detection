@@ -20,8 +20,8 @@ class ClapPatternMatcher:
     """
     def __init__(
         self,
-        min_interval_ms: int = 70,
-        max_interval_ms: int = 550,
+        min_interval_ms: int = 140,
+        max_interval_ms: int = 500,
         cooldown_ms: int = 400,
         on_pattern_callback: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None
     ):
