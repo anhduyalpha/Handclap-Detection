@@ -44,10 +44,10 @@ class PersonalModelTrainer:
         start_time = time.time()
         
         # 1. Tải dữ liệu mẫu gốc từ tất cả các danh mục
-        raw_claps, raw_noises = self.dataset_manager.load_dataset(profile_name)
+        raw_claps, raw_noises, raw_fps = self.dataset_manager.load_dataset_separated(profile_name)
         if len(raw_claps) == 0:
             raise ValueError(f"Không tìm thấy mẫu tiếng vỗ tay nào trong profile '{profile_name}'")
-        if len(raw_noises) == 0:
+        if len(raw_noises) == 0 and len(raw_fps) == 0:
             raise ValueError(f"Không tìm thấy mẫu tiếng ồn nào trong profile '{profile_name}'")
 
         # 2. Data Augmentation nâng cao
@@ -58,6 +58,12 @@ class PersonalModelTrainer:
         aug_noises = []
         for n in raw_noises:
             aug_noises.extend(self.augmentor.augment_sample(n, bg_noises=None, count=augment_factor))
+
+        # Nhân bản tăng cường GẤP ĐÔI (2x) cho các mẫu Báo Giả (Hard Negatives)
+        if len(raw_fps) > 0:
+            fp_factor = max(augment_factor * 2, 20)
+            for fp in raw_fps:
+                aug_noises.extend(self.augmentor.augment_sample(fp, bg_noises=None, count=fp_factor))
 
         # Xáo trộn ngẫu nhiên để lấy đều mọi danh mục tạp âm (tiếng nói, kim loại, đóng cửa, gõ phím)
         rng = np.random.default_rng(42)

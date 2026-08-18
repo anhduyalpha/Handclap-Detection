@@ -17,7 +17,7 @@ trainer = PersonalModelTrainer(sample_rate=settings.audio.sample_rate)
 class MarkFalsePositiveRequest(BaseModel):
     event_id: str
     profile_name: str = "default"
-    category: str = "noises" # "speech" | "typing" | "ambient" | "snaps" | "noises"
+    category: str = "false_positives" # "false_positives" | "speech" | "typing" | "ambient" | "snaps" | "noises"
     auto_retrain: bool = True
 
 @router.get("/recent-triggers")

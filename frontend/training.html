@@ -79,7 +79,7 @@
             </div>
           </div>
 
-          <!-- Granular Category Tabs (5 Danh Mục Chi Tiết) -->
+          <!-- Granular Category Tabs (6 Danh Mục Chi Tiết) -->
           <div class="category-tabs-container">
             <div class="section-micro-label">Danh Mục Thu Âm:</div>
             <div class="category-tabs-grid">
@@ -88,15 +88,20 @@
                 <span class="tab-title">Vỗ Tay</span>
                 <span class="tab-badge" id="badge-count-claps">0</span>
               </button>
-              <button class="cat-tab-btn" data-cat="typing" id="btn-cat-typing">
-                <span class="tab-icon">⌨️</span>
-                <span class="tab-title">Gõ Phím/Bàn</span>
-                <span class="tab-badge" id="badge-count-typing">0</span>
+              <button class="cat-tab-btn" data-cat="false_positives" id="btn-cat-false_positives" style="border-color: rgba(239, 68, 68, 0.4);">
+                <span class="tab-icon">🚫</span>
+                <span class="tab-title">Mẫu Báo Giả</span>
+                <span class="tab-badge" id="badge-count-false_positives" style="background: rgba(239,68,68,0.2); color: #f87171;">0</span>
               </button>
               <button class="cat-tab-btn" data-cat="speech" id="btn-cat-speech">
                 <span class="tab-icon">🗣️</span>
                 <span class="tab-title">Tiếng Nói</span>
                 <span class="tab-badge" id="badge-count-speech">0</span>
+              </button>
+              <button class="cat-tab-btn" data-cat="typing" id="btn-cat-typing">
+                <span class="tab-icon">⌨️</span>
+                <span class="tab-title">Gõ Phím/Bàn</span>
+                <span class="tab-badge" id="badge-count-typing">0</span>
               </button>
               <button class="cat-tab-btn" data-cat="snaps" id="btn-cat-snaps">
                 <span class="tab-icon">🤏</span>
@@ -212,7 +217,12 @@
                 <p class="card-subtitle">Các mẫu âm thanh dùng để trích xuất đặc trưng & huấn luyện</p>
               </div>
             </div>
-            <button id="btn-refresh-samples" class="btn btn-secondary btn-sm" title="Làm mới">🔄 Làm Mới</button>
+            <div style="display: flex; gap: 0.4rem;">
+              <button id="btn-sync-dell-samples" class="btn btn-secondary btn-sm" title="Tải toàn bộ mẫu âm thanh từ Server Dell về Windows" style="color: #60a5fa; border-color: rgba(96, 165, 250, 0.3);">
+                📥 Đồng Bộ Từ Dell
+              </button>
+              <button id="btn-refresh-samples" class="btn btn-secondary btn-sm" title="Làm mới">🔄 Làm Mới</button>
+            </div>
           </div>
 
           <div class="sample-library-list" id="sample-library-container">

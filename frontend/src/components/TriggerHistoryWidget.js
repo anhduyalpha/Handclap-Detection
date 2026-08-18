@@ -7,6 +7,7 @@ import { ApiClient } from '../services/api_client.js';
 import { wsClient } from '../services/websocket_client.js';
 
 const CATEGORY_MAP = {
+  false_positives: '🚫 Mẫu Báo Giả',
   speech: '🗣️ Tiếng Nói',
   typing: '⌨️ Gõ Bàn / Phím',
   ambient: '🌪️ Quạt / Tiếng Ồn',
@@ -80,9 +81,10 @@ export class TriggerHistoryWidget {
 
           <div class="form-group" style="margin-bottom: 1rem;">
             <label style="font-size: 0.78rem; color: var(--text-primary); font-weight: 600; margin-bottom: 0.35rem; display: block;">
-              Chọn danh mục âm thanh thực tế:
+              Chọn danh mục lưu mẫu:
             </label>
             <select class="form-select" id="select-fp-category" style="width: 100%; background: #1f2937; border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.5rem; border-radius: 6px; font-size: 0.85rem;">
+              <option value="false_positives" selected>🚫 Mẫu Báo Giả Chuyên Biệt (Hard Negatives - Khuyên dùng)</option>
               <option value="speech">🗣️ Tiếng Nói / Tiếng TV / Ca Hát</option>
               <option value="typing">⌨️ Gõ Phím / Va Chạm Đồ Vật</option>
               <option value="ambient">🌪️ Quạt Gió / Tiếng Ồn Nền</option>

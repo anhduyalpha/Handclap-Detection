@@ -17,6 +17,7 @@ import { TriggerHistoryWidget } from './components/TriggerHistoryWidget.js';
 
 const CATEGORY_NAMES = {
   claps: '👏 Vỗ Tay',
+  false_positives: '🚫 Mẫu Báo Giả',
   typing: '⌨️ Gõ Bàn & Phím',
   speech: '🗣️ Tiếng Nói',
   snaps: '🤏 Búng Tay & Va Chạm',
@@ -25,7 +26,7 @@ const CATEGORY_NAMES = {
 
 class TrainingStudioApp {
   constructor() {
-    this.currentCategory = 'claps'; // 'claps' | 'typing' | 'speech' | 'snaps' | 'ambient'
+    this.currentCategory = 'claps'; // 'claps' | 'false_positives' | 'typing' | 'speech' | 'snaps' | 'ambient'
     this.recordingMode = 'autosplit'; // 'autosplit' | 'noise_session' | 'single'
     this.sessionDuration = 15; // 10 | 15 | 20 | 30 seconds
     this.activeProfile = 'default';
@@ -77,7 +78,7 @@ class TrainingStudioApp {
   }
 
   bindDOM() {
-    // 1. Granular 5 Category Tabs
+    // 1. Granular Category Tabs
     document.querySelectorAll('.cat-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const cat = btn.getAttribute('data-cat');
@@ -127,8 +128,9 @@ class TrainingStudioApp {
     // 6. Record Action Button
     document.getElementById('btn-record-action')?.addEventListener('click', () => this.toggleRecord());
 
-    // 7. Refresh Samples Button
+    // 7. Refresh Samples Button & Sync From Dell
     document.getElementById('btn-refresh-samples')?.addEventListener('click', () => this.loadSamples());
+    document.getElementById('btn-sync-dell-samples')?.addEventListener('click', () => this.syncSamplesFromDell());
 
     // 8. Train Trigger Button
     document.getElementById('btn-trigger-training')?.addEventListener('click', () => this.triggerTraining());
@@ -599,7 +601,7 @@ class TrainingStudioApp {
     if (!container) return;
 
     try {
-      const categories = ['claps', 'typing', 'speech', 'snaps', 'ambient'];
+      const categories = ['claps', 'false_positives', 'speech', 'typing', 'snaps', 'ambient'];
       let totalSamplesCount = 0;
       const allSamples = [];
 
@@ -662,7 +664,79 @@ class TrainingStudioApp {
       });
 
     } catch (e) {
-      container.innerHTML = `<div class="empty-state" style="color: #ef4444;">Lỗi tải thư viện mẫu: ${e.message}</div>`;
+      console.warn('Cannot load samples:', e);
+    }
+  }
+
+  async syncSamplesFromDell() {
+    const btn = document.getElementById('btn-sync-dell-samples');
+    const originalText = btn ? btn.innerHTML : '📥 Đồng Bộ Từ Dell';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Đang tải từ Dell...';
+    }
+
+    try {
+      const dellUrl = this.serverUrl.replace(/\/+$/, '');
+      const res = await fetch(`${dellUrl}/api/training/samples?profile_name=${this.activeProfile}`);
+      if (!res.ok) throw new Error(`Không thể kết nối tới Server Dell (${dellUrl})`);
+
+      const data = await res.json();
+      const dellSamples = data.samples || [];
+
+      if (dellSamples.length === 0) {
+        alert(`Server Dell chưa có mẫu âm thanh nào trong profile '${this.activeProfile}'.`);
+        return;
+      }
+
+      let downloadedCount = 0;
+      for (const sample of dellSamples) {
+        const audioUrl = sample.url?.startsWith('http') ? sample.url : `${dellUrl}${sample.url || sample.wav_url}`;
+        try {
+          const audioRes = await fetch(audioUrl);
+          if (audioRes.ok) {
+            const blob = await audioRes.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+            
+            // Chuyển sang AudioBuffer bằng Web Audio API
+            const tempCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const decoded = await tempCtx.decodeAudioData(arrayBuffer);
+            const float32Data = decoded.getChannelData(0);
+
+            // Upload vào Local Backend của Windows
+            let binary = '';
+            const bytes = new Uint8Array(float32Data.buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const base64Audio = btoa(binary);
+
+            await fetch('/api/training/sample', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                profile_name: this.activeProfile,
+                category: sample.category || 'false_positives',
+                audio_base64: base64Audio,
+                format: 'float32'
+              })
+            });
+            downloadedCount++;
+          }
+        } catch (sampleErr) {
+          console.warn(`Không thể tải sample ${sample.sample_id || sample.filename}:`, sampleErr);
+        }
+      }
+
+      await this.loadSamples();
+      alert(`🎉 Đã đồng bộ thành công ${downloadedCount}/${dellSamples.length} mẫu âm thanh từ Server Dell về Windows!`);
+    } catch (err) {
+      alert(`Lỗi khi đồng bộ từ Dell: ${err.message}. Hãy kiểm tra IP Server Dell (${this.serverUrl}).`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     }
   }
 

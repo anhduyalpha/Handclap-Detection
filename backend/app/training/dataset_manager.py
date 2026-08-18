@@ -9,8 +9,9 @@ from ..config import DATA_DIR, USER_PROFILES_DIR, DEFAULT_SAMPLES_DIR
 
 CATEGORIES = {
     "claps": "Tiếng Vỗ Tay",
-    "typing": "Gõ Bàn & Bàn Phím",
+    "false_positives": "Mẫu Báo Giả (Hard Negatives)",
     "speech": "Tiếng Nói & Hơi Thở",
+    "typing": "Gõ Bàn & Bàn Phím",
     "snaps": "Va Chạm & Búng Tay",
     "ambient": "Tiếng Ồn Nền Phòng",
     "noises": "Tạp Âm Chung"
@@ -187,6 +188,16 @@ class DatasetManager:
 
     def load_dataset(self, profile_name: str) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """Tải toàn bộ mẫu claps và tất cả các loại tiếng ồn của profile kèm seed noises"""
+        claps, noises, fps = self.load_dataset_separated(profile_name)
+        return claps, noises + fps
+
+    def load_dataset_separated(self, profile_name: str) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+        """
+        Tải toàn bộ dataset và phân tách rõ 3 nhóm:
+        - claps: Các mẫu vỗ tay
+        - noises: Các mẫu tiếng ồn thường
+        - false_positives: Các mẫu báo giả (Hard Negatives) cần nhân bản x2
+        """
         p_dir = self.get_profile_dir(profile_name)
         
         claps = []
@@ -206,13 +217,22 @@ class DatasetManager:
                     except Exception:
                         pass
 
+        false_positives = []
+        fp_dir = p_dir / "false_positives"
+        if fp_dir.exists():
+            for f in fp_dir.glob("*.npy"):
+                try:
+                    false_positives.append(np.load(f))
+                except Exception:
+                    pass
+
         # Luôn bổ sung kho mẫu hạt giống chuẩn đa dạng (tiếng nói, kim loại, đóng cửa)
         def_claps, def_noises = self.load_default_seed_data()
         if len(claps) < 5:
             claps = claps + def_claps
         noises = noises + def_noises
 
-        return claps, noises
+        return claps, noises, false_positives
 
     def _write_wav(self, path: Path, audio: np.ndarray, sample_rate: int):
         """Ghi file WAV 16-bit PCM tiêu chuẩn"""
