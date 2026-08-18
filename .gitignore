@@ -63,11 +63,21 @@ $RECYCLE.BIN/
 temp/
 scratch/
 
-# User Profile Audio Recordings (Do not track personal noise recordings)
-# Keep directory structures with .gitkeep
-backend/data/user_profiles/*/claps/*.wav
-backend/data/user_profiles/*/typing/*.wav
-backend/data/user_profiles/*/speech/*.wav
-backend/data/user_profiles/*/snaps/*.wav
-backend/data/user_profiles/*/ambient/*.wav
-backend/data/user_profiles/*/noises/*.wav
+# ==============================================================================
+#  RAW AUDIO TRAINING DATA (DO NOT COMMIT RAW SAMPLES)
+# ==============================================================================
+*.wav
+*.npy
+*.npz
+*.mp3
+*.flac
+*.ogg
+*.raw
+backend/data/user_profiles/
+backend/data/default_samples/
+
+# ==============================================================================
+#  AI MODEL CHECKPOINTS (TRACKED SO SERVERS CAN PULL TRAINED BRAIN)
+# ==============================================================================
+!backend/data/checkpoints/
+!backend/data/checkpoints/**
