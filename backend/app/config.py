@@ -92,6 +92,9 @@ class AppSettings(BaseModel):
     pattern: PatternConfig = PatternConfig()
     light: SmartLightConfig = SmartLightConfig()
     windows_studio_url: str = os.getenv("WINDOWS_STUDIO_URL", "http://192.168.2.134:8001")
+    linux_server_url: str = os.getenv("LINUX_SERVER_URL", "http://192.168.2.171:8000")
+    auto_collect_true_claps: bool = True  # Tự động gửi mẫu vỗ tay thành công về Windows để học liên tục
 
 settings = AppSettings()
+
 

@@ -46,6 +46,49 @@ export class TriggerHistoryWidget {
         this.renderEventList();
       }
     });
+
+    // Lắng nghe sự kiện AI Model tự động nâng cấp từ Windows
+    wsClient.on('AI_MODEL_UPGRADED', (data) => {
+      this.showUpgradeToast(data);
+    });
+  }
+
+  showUpgradeToast(data) {
+    const existing = document.getElementById('ai-upgrade-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'ai-upgrade-toast';
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      border: 1px solid #6366f1;
+      border-radius: 12px;
+      padding: 14px 20px;
+      color: #fff;
+      font-size: 0.85rem;
+      box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: slideInUp 0.3s ease;
+    `;
+    const acc = data?.metrics?.accuracy ? ` (Độ chính xác: ${data.metrics.accuracy}%)` : '';
+    toast.innerHTML = `
+      <span style="font-size: 1.4rem;">🚀</span>
+      <div>
+        <div style="font-weight: 700; color: #a5b4fc;">Mô hình AI đã tự động nâng cấp!</div>
+        <div style="font-size: 0.75rem; color: #c7d2fe;">Đã học các mẫu âm thanh mới và kích hoạt ngay${acc}</div>
+      </div>
+      <button style="background: transparent; border: none; color: #a5b4fc; font-size: 1rem; cursor: pointer; margin-left: 8px;" onclick="this.parentElement.remove()">✕</button>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      if (toast.parentElement) toast.remove();
+    }, 6000);
   }
 
   render() {

@@ -162,6 +162,8 @@ export class AudioVisualizer {
         dynamicEnergyThresh: data.dynamic_energy_thresh || 0.028,
         dynamicCrestThresh: data.dynamic_crest_thresh || 2.4,
         ambientStatus: data.ambient_status || 'normal',
+        ambientLabel: data.ambient_label || '☀️ Phòng Tiêu Chuẩn',
+        snrDb: data.snr_db || 0.0,
         autoAdaptive: data.auto_adaptive !== false
       };
       this.updateGauges();
@@ -194,15 +196,17 @@ export class AudioVisualizer {
     if (!badge || !text) return;
 
     badge.className = 'status-pill room-status';
+    const snrText = this.telemetryData.snrDb ? ` | SNR ${this.telemetryData.snrDb}dB` : '';
+
     if (this.telemetryData.ambientStatus === 'quiet') {
       badge.classList.add('quiet');
-      text.textContent = '🌿 Phòng yên tĩnh (Nhạy cao)';
+      text.textContent = `🌙 Phòng Yên Tĩnh (Bắt xa 3-5m${snrText})`;
     } else if (this.telemetryData.ambientStatus === 'noisy') {
       badge.classList.add('noisy');
-      text.textContent = '🔊 Phòng ồn (Chống nhiễu)';
+      text.textContent = `🌪️ Phòng Ồn (Chống báo giả${snrText})`;
     } else {
       badge.classList.add('normal');
-      text.textContent = '🔉 Phòng chuẩn';
+      text.textContent = `☀️ Phòng Chuẩn (${snrText || 'Cân bằng'})`;
     }
   }
 

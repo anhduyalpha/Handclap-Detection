@@ -79,6 +79,24 @@ class LiveDetectionEngine:
                 "event": record
             })
 
+        # Tự động gửi mẫu True Clap sang Windows nếu được bật (rate-limited: tối đa 1 mẫu mỗi 15s)
+        if pattern in ("double", "triple") and avg_conf >= 0.85:
+            if getattr(settings, "windows_studio_url", None) and getattr(settings, "auto_collect_true_claps", True):
+                now_t = time.time()
+                if now_t - getattr(self, "_last_true_clap_sent", 0.0) > 15.0:
+                    self._last_true_clap_sent = now_t
+                    try:
+                        from ..api.routes_events import _forward_audio_to_windows_async
+                        _forward_audio_to_windows_async(
+                            profile_name=settings.ml.active_profile,
+                            category="claps",
+                            audio_clip=audio_clip,
+                            target_url=settings.windows_studio_url
+                        )
+                        print("[LiveEngine] [ActiveLearning] True Clap sample automatically forwarded to Windows Studio!")
+                    except Exception as err:
+                        print(f"[LiveEngine] ActiveLearning note: {err}")
+
     def process_chunk(self, audio_chunk: np.ndarray) -> Dict[str, Any]:
         """
         Xử lý từng chunk âm thanh float32 nhận được từ client hoặc server mic.
@@ -141,6 +159,8 @@ class LiveDetectionEngine:
             "dynamic_energy_thresh": round(float(self.noise_estimator.dynamic_energy_thresh), 4),
             "dynamic_crest_thresh": round(float(self.noise_estimator.dynamic_crest_thresh), 2),
             "ambient_status": self.noise_estimator.ambient_status,
+            "ambient_label": getattr(self.noise_estimator, "ambient_label", "☀️ Phòng Tiêu Chuẩn"),
+            "snr_db": getattr(self.noise_estimator, "current_snr_db", 0.0),
             "auto_adaptive": settings.adaptive_noise.enabled
         }
 
@@ -155,9 +175,16 @@ class LiveDetectionEngine:
                 clip = self.ring_buffer.get_recent(clip_samples)
                 
                 if len(clip) >= clip_samples // 2:
+                    # Bù âm lượng tự động (Auto-Gain Boost) cho các cú vỗ nhẹ / vỗ ở xa 3-5m trong phòng yên tĩnh
+                    if self.noise_estimator.ambient_status == "quiet" and peak_amp < 0.08 and hf_ratio > 0.30:
+                        boost_factor = min(1.8, 0.08 / max(0.02, peak_amp))
+                        clip_input = np.clip(clip * boost_factor, -1.0, 1.0)
+                    else:
+                        clip_input = clip
+
                     # Trích xuất đặc trưng
-                    mel_spec = self.feature_extractor.compute_mel_spectrogram(clip)
-                    feat_vec = self.feature_extractor.compute_feature_vector(clip)
+                    mel_spec = self.feature_extractor.compute_mel_spectrogram(clip_input)
+                    feat_vec = self.feature_extractor.compute_feature_vector(clip_input)
 
                     # Dự đoán xác suất từ ML Classifier kèm ngưỡng động
                     is_clap, confidence, clf_details = self.classifier.predict(

@@ -131,13 +131,28 @@ export class SettingsModal {
               <input type="text" class="form-input" id="input-webhook" placeholder="http://192.168.1.100/api/relay hoặc Home Assistant webhook">
             </div>
 
-            <!-- Windows Studio URL (Real-time Forwarding) -->
+            <!-- Windows Studio & Linux URLs (Active Learning Network) -->
             <div class="form-group" style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 0.85rem;">
-              <div class="form-label" style="color: #a5b4fc; font-weight: 600;">💻 URL Máy Windows Studio (Tự động nhận mẫu Báo Giả)</div>
-              <input type="text" class="form-input" id="input-windows-url" placeholder="http://192.168.2.134:8001">
-              <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 0.35rem;">
-                Khi bấm Báo Giả trên Linux, đoạn âm thanh sẽ tự động truyền trực tiếp sang máy tính Windows này để lưu vào tập huấn luyện.
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: #a5b4fc; font-weight: 600; font-size: 0.85rem;">🚀 Tự Động Học Mẫu Vỗ Tay Thật (Active Learning)</span>
+                <label class="switch-toggle">
+                  <input type="checkbox" id="input-auto-collect" checked>
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+              <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-bottom: 0.75rem;">
+                Tự động gửi mẫu vỗ tay thành công ở cự ly xa/gần sang máy Windows để GPU liên tục tối ưu hóa mô hình.
               </small>
+
+              <div style="margin-bottom: 0.5rem;">
+                <div class="form-label" style="font-size: 0.78rem; color: #cbd5e1;">💻 URL Máy Windows (Training Studio)</div>
+                <input type="text" class="form-input" id="input-windows-url" placeholder="http://192.168.2.134:8001">
+              </div>
+
+              <div>
+                <div class="form-label" style="font-size: 0.78rem; color: #cbd5e1;">🖥️ URL Server Linux (Live Mic Engine)</div>
+                <input type="text" class="form-input" id="input-linux-url" placeholder="http://192.168.2.171:8000">
+              </div>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
@@ -198,7 +213,9 @@ export class SettingsModal {
         double_clap_action: this.container.querySelector('#select-act-double').value,
         triple_clap_action: this.container.querySelector('#select-act-triple').value,
         webhook_url: this.container.querySelector('#input-webhook').value,
-        windows_studio_url: this.container.querySelector('#input-windows-url')?.value || 'http://192.168.2.134:8001'
+        windows_studio_url: this.container.querySelector('#input-windows-url')?.value || 'http://192.168.2.134:8001',
+        linux_server_url: this.container.querySelector('#input-linux-url')?.value || 'http://192.168.2.171:8000',
+        auto_collect_true_claps: this.container.querySelector('#input-auto-collect') ? this.container.querySelector('#input-auto-collect').checked : true
       };
 
       try {
@@ -212,7 +229,7 @@ export class SettingsModal {
 
   populateForm() {
     if (!this.settings) return;
-    const { dsp, adaptive_noise, ml, pattern, light, windows_studio_url } = this.settings;
+    const { dsp, adaptive_noise, ml, pattern, light, windows_studio_url, linux_server_url, auto_collect_true_claps } = this.settings;
 
     const inputAdaptive = this.container.querySelector('#input-adaptive-enabled');
     const inputMargin = this.container.querySelector('#input-margin-factor');
@@ -261,6 +278,16 @@ export class SettingsModal {
     const inWindowsUrl = this.container.querySelector('#input-windows-url');
     if (inWindowsUrl) {
       inWindowsUrl.value = windows_studio_url || 'http://192.168.2.134:8001';
+    }
+
+    const inLinuxUrl = this.container.querySelector('#input-linux-url');
+    if (inLinuxUrl) {
+      inLinuxUrl.value = linux_server_url || 'http://192.168.2.171:8000';
+    }
+
+    const inAutoCollect = this.container.querySelector('#input-auto-collect');
+    if (inAutoCollect) {
+      inAutoCollect.checked = auto_collect_true_claps !== false;
     }
   }
 

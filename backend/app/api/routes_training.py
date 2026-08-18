@@ -98,6 +98,13 @@ def upload_sample(req: SampleUploadRequest):
             audio=audio
         )
 
+        # Thông báo cho AutoLearner trên Windows để gom batch tự động huấn luyện
+        try:
+            from ..training.auto_learner import auto_learner
+            auto_learner.notify_new_sample(req.profile_name, req.category)
+        except Exception as err:
+            print(f"[RoutesTraining] AutoLearner note: {err}")
+
         claps, noises = dataset_mgr.load_dataset(req.profile_name)
         return {
             "status": "success",
@@ -444,5 +451,57 @@ def stream_sample_wav(profile_name: str, category: str, filename: str):
     if not wav_path.exists():
         raise HTTPException(status_code=404, detail="File audio không tồn tại")
     return FileResponse(str(wav_path), media_type="audio/wav")
+
+class CheckpointUploadRequest(BaseModel):
+    profile_name: str = "default"
+    files: Dict[str, str] # filename -> base64 string
+    metrics: Optional[Dict[str, Any]] = None
+
+@router.post("/upload-checkpoint")
+def upload_checkpoint(req: CheckpointUploadRequest):
+    """Nhận gói checkpoint mô hình AI vừa huấn luyện xong từ máy Windows và Hot-Reload trên Linux"""
+    from ..config import CHECKPOINTS_DIR
+    ckpt_dir = CHECKPOINTS_DIR / req.profile_name
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname, b64_content in req.files.items():
+        target_path = ckpt_dir / fname
+        content_bytes = base64.b64decode(b64_content)
+        with open(target_path, "wb") as f:
+            f.write(content_bytes)
+
+    # Hot reload model trên Live Engine
+    try:
+        live_engine.reload_model(req.profile_name)
+    except Exception as e:
+        print(f"[RoutesTraining] Hot-reload note: {e}")
+
+    # Gửi thông báo WebSocket tới toàn bộ giao diện Web
+    if live_engine.broadcast_callback:
+        try:
+            live_engine.broadcast_callback({
+                "type": "AI_MODEL_UPGRADED",
+                "profile_name": req.profile_name,
+                "metrics": req.metrics or {},
+                "message": f"🚀 AI Model profile '{req.profile_name}' vừa được tự động nâng cấp thành công!"
+            })
+        except Exception as e:
+            print(f"[RoutesTraining] Broadcast upgrade error: {e}")
+
+    return {
+        "status": "success",
+        "message": f"Đã nạp và kích hoạt mô hình AI mới cho profile '{req.profile_name}'",
+        "metrics": req.metrics
+    }
+
+@router.get("/auto-learn-status")
+def get_auto_learn_status():
+    """Kiểm tra trạng thái hàng đợi tự động học trên Windows"""
+    try:
+        from ..training.auto_learner import auto_learner
+        return auto_learner.get_status()
+    except Exception as e:
+        return {"enabled": False, "error": str(e)}
+
 
 

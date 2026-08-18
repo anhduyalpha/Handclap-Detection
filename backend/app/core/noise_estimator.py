@@ -80,18 +80,25 @@ class AdaptiveNoiseFloorEstimator:
         self.noise_floor_rms = max(0.001, min(0.20, self.noise_floor_rms))
         self.noise_floor_peak = max(0.003, min(0.30, self.noise_floor_peak))
 
-        # Phân loại trạng thái âm học phòng
+        # Phân loại trạng thái âm học phòng & Căn chỉnh Day/Night
         if self.noise_floor_rms < 0.009:
-            self.ambient_status = "quiet"     # Phòng rất yên tĩnh
+            self.ambient_status = "quiet"     # Phòng rất yên tĩnh (Đêm khuya / vỗ xa 3-5m)
+            self.ambient_label = "🌙 Phòng Yên Tĩnh (Bắt xa 3-5m)"
         elif self.noise_floor_rms > 0.032:
             self.ambient_status = "noisy"     # Phòng nhiều tạp âm
+            self.ambient_label = "🌪️ Phòng Ồn (Chống báo giả cao)"
         else:
             self.ambient_status = "normal"    # Phòng tiêu chuẩn
+            self.ambient_label = "☀️ Phòng Tiêu Chuẩn"
+
+        # Tính toán tỷ lệ SNR thời gian thực (dB)
+        snr_ratio = max(0.0001, chunk_rms) / max(0.0001, self.noise_floor_rms)
+        self.current_snr_db = round(float(20.0 * np.log10(snr_ratio)), 1)
 
         # Tính toán các ngưỡng động
         if cfg.enabled:
             # 1. Dynamic Energy Threshold:
-            raw_energy = self.noise_floor_peak * cfg.margin_factor + 0.005
+            raw_energy = self.noise_floor_peak * cfg.margin_factor + 0.004
             self.dynamic_energy_thresh = max(
                 cfg.min_energy_threshold, 
                 min(cfg.max_energy_threshold, raw_energy)
@@ -100,8 +107,8 @@ class AdaptiveNoiseFloorEstimator:
             # 2. Dynamic Crest Factor & AI Confidence:
             if self.ambient_status == "quiet":
                 # Nới lỏng nhẹ để bắt tiếng vỗ xa nhưng vẫn giữ độ tin cậy AI cao
-                self.dynamic_crest_thresh = max(2.2, settings.dsp.crest_factor_min - 0.3)
-                self.dynamic_confidence_thresh = max(0.70, settings.ml.confidence_threshold - 0.05)
+                self.dynamic_crest_thresh = max(2.1, settings.dsp.crest_factor_min - 0.4)
+                self.dynamic_confidence_thresh = max(0.66, settings.ml.confidence_threshold - 0.08)
             elif self.ambient_status == "noisy":
                 # Siết chặt để chống báo giả từ tiếng ồn môi trường
                 self.dynamic_crest_thresh = min(3.5, settings.dsp.crest_factor_min + 0.6)
@@ -124,6 +131,8 @@ class AdaptiveNoiseFloorEstimator:
             "noise_floor_peak": round(float(self.noise_floor_peak), 4),
             "hf_noise_ratio": round(float(self.hf_noise_ratio), 3),
             "ambient_status": self.ambient_status,
+            "ambient_label": getattr(self, "ambient_label", "☀️ Phòng Tiêu Chuẩn"),
+            "snr_db": getattr(self, "current_snr_db", 0.0),
             "dynamic_energy_thresh": round(float(self.dynamic_energy_thresh), 4),
             "dynamic_crest_thresh": round(float(self.dynamic_crest_thresh), 2),
             "dynamic_confidence_thresh": round(float(self.dynamic_confidence_thresh), 2),

@@ -28,6 +28,8 @@ class SettingsUpdateRequest(BaseModel):
     triple_clap_action: Optional[str] = None
     webhook_url: Optional[str] = None
     windows_studio_url: Optional[str] = None
+    linux_server_url: Optional[str] = None
+    auto_collect_true_claps: Optional[bool] = None
     # Cấu hình Căn chỉnh độ ồn phòng liên tục
     adaptive_noise_enabled: Optional[bool] = None
     adaptation_speed: Optional[float] = None
@@ -75,7 +77,9 @@ def get_settings():
         "ml": settings.ml.model_dump(),
         "pattern": settings.pattern.model_dump(),
         "light": settings.light.model_dump(),
-        "windows_studio_url": getattr(settings, "windows_studio_url", "http://192.168.2.134:8001")
+        "windows_studio_url": getattr(settings, "windows_studio_url", "http://192.168.2.134:8001"),
+        "linux_server_url": getattr(settings, "linux_server_url", "http://192.168.2.171:8000"),
+        "auto_collect_true_claps": getattr(settings, "auto_collect_true_claps", True)
     }
 
 @router.post("/settings")
@@ -114,5 +118,9 @@ def update_settings(req: SettingsUpdateRequest):
         settings.light.webhook_url = req.webhook_url
     if req.windows_studio_url is not None:
         settings.windows_studio_url = req.windows_studio_url
+    if req.linux_server_url is not None:
+        settings.linux_server_url = req.linux_server_url
+    if req.auto_collect_true_claps is not None:
+        settings.auto_collect_true_claps = req.auto_collect_true_claps
 
     return {"status": "success", "settings": get_settings()}
