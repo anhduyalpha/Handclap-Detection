@@ -183,9 +183,9 @@ class LiveDetectionEngine:
         # 4. Stage 2: Nếu Stage 1 xác nhận xung hợp lệ -> Chạy Double-Buffered ML Classifier
         now = time.time()
         if is_transient:
-            logger.info(f"[Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f}, Rise={dsp_metrics.get('rise_time_ms', 0):.1f}ms, Decay={dsp_metrics.get('decay_ratio', 0):.1f}x")
+            logger.info(f"[Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f} -> Running AI Classifier...")
             
-            if (now - self.last_detection_time > 0.13): # Anti-echo 130ms
+            if (now - self.last_detection_time > 0.08):
                 t_ml_start = time.perf_counter()
                 
                 # Trích xuất cửa sổ 250ms (4000 samples)
@@ -194,8 +194,8 @@ class LiveDetectionEngine:
                 
                 if len(clip) >= clip_samples // 2:
                     # Auto-Gain Boost cho vỗ nhẹ trong phòng yên tĩnh
-                    if self.noise_estimator.ambient_status == "quiet" and peak_amp < 0.08 and hf_ratio > 0.30:
-                        boost_factor = min(1.8, 0.08 / max(0.02, peak_amp))
+                    if self.noise_estimator.ambient_status == "quiet" and peak_amp < 0.08:
+                        boost_factor = min(1.8, 0.08 / max(0.015, peak_amp))
                         clip_input = np.clip(clip * boost_factor, -1.0, 1.0)
                     else:
                         clip_input = clip

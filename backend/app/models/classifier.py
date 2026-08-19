@@ -169,11 +169,11 @@ class ClapClassifier:
             except Exception as e:
                 logger.debug(f"Sklearn inference note: {e}")
 
-        # 3. Tổng hợp điểm tự tin (Weighted Ensemble)
+        # 3. Tổng hợp điểm tự tin (Ensemble Calibration)
         if cnn_ref is not None and sk_ref is not None and len(conf_scores) == 2:
-            final_confidence = float(0.75 * conf_scores[0] + 0.25 * conf_scores[1])
+            final_confidence = float(max(conf_scores[0], conf_scores[1]) * 0.70 + min(conf_scores[0], conf_scores[1]) * 0.30)
         elif conf_scores:
-            final_confidence = float(np.mean(conf_scores))
+            final_confidence = float(np.max(conf_scores))
         else:
             # Fallback rule-based nếu chưa có file weights
             final_confidence = self._fallback_rule_score(dsp_metrics)

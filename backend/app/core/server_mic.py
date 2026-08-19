@@ -12,7 +12,8 @@ logger = logging.getLogger("handclap.server_mic")
 class ServerMicrophoneStreamer:
     """
     Thu âm trực tiếp từ Microphone tích hợp của Server Laptop (Dell ALC3246 / ALSA).
-    Tối ưu hóa âm lượng thu âm phần cứng & Kỹ thuật số (Digital Gain Boost 1.35x).
+    Tối ưu hóa âm lượng thu âm phần cứng & Kỹ thuật số (Digital Gain Boost 1.6x).
+    Hỗ trợ tự động fallback giữa Mono (-c 1) và Stereo (-c 2) downmix.
     Bổ sung Heartbeat Watchdog 24/7: Tự động khởi động lại luồng nếu mất tín hiệu audio > 3s.
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
@@ -26,14 +27,16 @@ class ServerMicrophoneStreamer:
         self._backend = "none"
 
     def _optimize_linux_alsa_gain(self):
-        """Tự động nâng mức âm lượng thu âm phần cứng của Micro Laptop lên mức tối đa"""
+        """Tự động mở khóa (Unmute) và nâng mức âm lượng phần cứng của Micro Laptop lên 100%"""
         commands = [
-            ["amixer", "set", "Capture", "100%"],
-            ["amixer", "set", "Capture Volume", "100%"],
-            ["amixer", "set", "Internal Mic Boost", "2"],
-            ["amixer", "set", "Mic Boost", "2"],
-            ["amixer", "set", "Digital", "100%"],
-            ["amixer", "sset", "Capture", "cap"]
+            ["amixer", "set", "Capture", "cap"],
+            ["amixer", "set", "Capture", "100%", "unmute"],
+            ["amixer", "set", "Capture Volume", "100%", "unmute"],
+            ["amixer", "set", "Internal Mic", "100%", "unmute"],
+            ["amixer", "set", "Internal Mic Boost", "3"],
+            ["amixer", "set", "Mic Boost", "3"],
+            ["amixer", "set", "Digital", "100%", "unmute"],
+            ["amixer", "set", "Master", "100%", "unmute"]
         ]
         for cmd in commands:
             try:
@@ -104,87 +107,97 @@ class ServerMicrophoneStreamer:
                 time.sleep(2.0)
 
     def _run_capture_loop(self) -> bool:
-        # 1. Thử qua ALSA arecord trước (Tương thích tốt nhất trên Dell Linux)
-        alsa_devices = ["default", "sysdefault", "pulse", "plughw:0,0"]
-        bytes_per_chunk = self.chunk_size * 2  # 16-bit PCM = 2 bytes/sample
+        # 1. Thử qua ALSA arecord trước (Hỗ trợ cả Mono và Stereo downmix)
+        alsa_devices = ["default", "sysdefault", "pulse", "plughw:0,0", "hw:0,0"]
         
         for dev in alsa_devices:
-            if not self.is_running:
-                return False
-            try:
-                cmd = [
-                    "arecord",
-                    "-D", dev,
-                    "-f", "S16_LE",
-                    "-r", str(self.sample_rate),
-                    "-c", "1",
-                    "-t", "raw",
-                    "-q"
-                ]
-                self.proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL
-                )
-                
-                # Đọc thử chunk đầu tiên để xác nhận device hoạt động
-                first_chunk = self.proc.stdout.read(bytes_per_chunk)
-                if not first_chunk or len(first_chunk) < bytes_per_chunk:
-                    self.proc.terminate()
-                    self.proc.wait(timeout=0.5)
-                    continue
-
-                self._backend = f"arecord:{dev}"
-                self.last_chunk_time = time.time()
-                logger.info(f"Laptop Hardware Mic LISTENING live via Linux 'arecord -D {dev}' ({self.sample_rate}Hz)!")
-
-                # Xử lý chunk đầu tiên
-                audio_int16 = np.frombuffer(first_chunk, dtype=np.int16)
-                audio_float = audio_int16.astype(np.float32) / 32768.0
-                audio_boosted = np.clip(audio_float * 1.35, -1.0, 1.0)
+            for channels in [1, 2]:
+                if not self.is_running:
+                    return False
                 try:
-                    telemetry = live_engine.process_chunk(audio_boosted)
-                    if live_engine.broadcast_callback:
-                        live_engine.broadcast_callback(telemetry)
-                except Exception:
-                    pass
+                    bytes_per_chunk = self.chunk_size * 2 * channels
+                    cmd = [
+                        "arecord",
+                        "-D", dev,
+                        "-f", "S16_LE",
+                        "-r", str(self.sample_rate),
+                        "-c", str(channels),
+                        "-t", "raw",
+                        "-q"
+                    ]
+                    self.proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL
+                    )
+                    
+                    # Đọc thử chunk đầu tiên để xác nhận device hoạt động
+                    first_chunk = self.proc.stdout.read(bytes_per_chunk)
+                    if not first_chunk or len(first_chunk) < bytes_per_chunk:
+                        self.proc.terminate()
+                        self.proc.wait(timeout=0.5)
+                        continue
 
-                chunk_count = 0
-                while self.is_running:
-                    raw_bytes = self.proc.stdout.read(bytes_per_chunk)
-                    if not raw_bytes or len(raw_bytes) < bytes_per_chunk:
-                        logger.warning(f"arecord -D {dev} stream ended. Retrying...")
-                        break
-
+                    self._backend = f"arecord:{dev}:{channels}ch"
                     self.last_chunk_time = time.time()
-                    audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
-                    audio_float = audio_int16.astype(np.float32) / 32768.0
-                    audio_boosted = np.clip(audio_float * 1.35, -1.0, 1.0)
+                    logger.info(f"Laptop Hardware Mic LISTENING live via Linux 'arecord -D {dev} -c {channels}' ({self.sample_rate}Hz)!")
 
-                    chunk_count += 1
-                    if chunk_count % 150 == 0:
-                        rms = float(np.sqrt(np.mean(audio_boosted ** 2) + 1e-10))
-                        peak = float(np.max(np.abs(audio_boosted)))
-                        logger.info(f"[ServerMic Heartbeat] ALC3246 Active ({dev}): Signal RMS={rms:.4f}, Peak={peak:.4f}, NoiseFloor={live_engine.noise_estimator.noise_floor_rms:.4f}")
+                    # Xử lý chunk đầu tiên
+                    if channels == 2:
+                        raw_stereo = np.frombuffer(first_chunk, dtype=np.int16).reshape(-1, 2)
+                        audio_float = raw_stereo.mean(axis=1).astype(np.float32) / 32768.0
+                    else:
+                        audio_float = np.frombuffer(first_chunk, dtype=np.int16).astype(np.float32) / 32768.0
 
+                    audio_boosted = np.clip(audio_float * 1.6, -1.0, 1.0)
                     try:
                         telemetry = live_engine.process_chunk(audio_boosted)
                         if live_engine.broadcast_callback:
                             live_engine.broadcast_callback(telemetry)
-                    except Exception as e:
-                        logger.error(f"process_chunk error: {e}")
-
-                return True
-            except FileNotFoundError:
-                break
-            except Exception as e:
-                logger.debug(f"arecord -D {dev} failed: {e}")
-                if self.proc:
-                    try:
-                        self.proc.terminate()
-                        self.proc.wait(timeout=0.5)
                     except Exception:
                         pass
+
+                    chunk_count = 0
+                    while self.is_running:
+                        raw_bytes = self.proc.stdout.read(bytes_per_chunk)
+                        if not raw_bytes or len(raw_bytes) < bytes_per_chunk:
+                            logger.warning(f"arecord -D {dev} stream ended. Retrying...")
+                            break
+
+                        self.last_chunk_time = time.time()
+                        if channels == 2:
+                            raw_stereo = np.frombuffer(raw_bytes, dtype=np.int16).reshape(-1, 2)
+                            audio_float = raw_stereo.mean(axis=1).astype(np.float32) / 32768.0
+                        else:
+                            audio_float = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+
+                        # Khuếch đại kỹ thuật số 1.6x cho micro tích hợp của laptop
+                        audio_boosted = np.clip(audio_float * 1.6, -1.0, 1.0)
+
+                        chunk_count += 1
+                        if chunk_count % 150 == 0:
+                            rms = float(np.sqrt(np.mean(audio_boosted ** 2) + 1e-10))
+                            peak = float(np.max(np.abs(audio_boosted)))
+                            logger.info(f"[ServerMic Heartbeat] ALC3246 Active ({dev} {channels}ch): Signal RMS={rms:.4f}, Peak={peak:.4f}, NoiseFloor={live_engine.noise_estimator.noise_floor_rms:.4f}")
+
+                        try:
+                            telemetry = live_engine.process_chunk(audio_boosted)
+                            if live_engine.broadcast_callback:
+                                live_engine.broadcast_callback(telemetry)
+                        except Exception as e:
+                            logger.error(f"process_chunk error: {e}")
+
+                    return True
+                except FileNotFoundError:
+                    break
+                except Exception as e:
+                    logger.debug(f"arecord -D {dev} -c {channels} failed: {e}")
+                    if self.proc:
+                        try:
+                            self.proc.terminate()
+                            self.proc.wait(timeout=0.5)
+                        except Exception:
+                            pass
 
         # 2. Fallback sang sounddevice nếu arecord không nhận
         try:
@@ -212,7 +225,7 @@ class ServerMicrophoneStreamer:
                         return
                     self.last_chunk_time = time.time()
                     audio_mono = indata[:, 0].astype(np.float32)
-                    audio_boosted = np.clip(audio_mono * 1.35, -1.0, 1.0)
+                    audio_boosted = np.clip(audio_mono * 1.6, -1.0, 1.0)
                     try:
                         telemetry = live_engine.process_chunk(audio_boosted)
                         if live_engine.broadcast_callback:
