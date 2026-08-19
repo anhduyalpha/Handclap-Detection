@@ -1,11 +1,14 @@
+import logging
 import numpy as np
 from scipy import signal
 from typing import List, Tuple
 
+logger = logging.getLogger("handclap.augmentation")
+
 class AudioAugmentor:
     """
     Bộ tăng cường dữ liệu âm thanh nâng cao (Data Augmentation Pro).
-    Tạo ra các biến thể cực kỳ phong phú:
+    Tạo ra các biến thể phong phú:
     1. Dynamic Amplitude Scaling (0.18x đến 1.6x): Giúp model nhận diện được cả tiếng vỗ siêu nhẹ lẫn cực mạnh.
     2. Time Shifting (-30ms đến +30ms).
     3. Room Noise Mixing: Trộn các tạp âm thực tế mà người dùng đã thu.
@@ -39,7 +42,6 @@ class AudioAugmentor:
         if len(audio) < 16:
             return audio
         try:
-            # Random high-pass or low-pass slight shelf
             tilt_type = np.random.choice(["hp", "lp", "none"])
             if tilt_type == "hp":
                 b, a = signal.butter(1, 400.0 / (self.sample_rate / 2.0), btype='highpass')
@@ -49,8 +51,8 @@ class AudioAugmentor:
                 b, a = signal.butter(1, 5500.0 / (self.sample_rate / 2.0), btype='lowpass')
                 filtered = signal.lfilter(b, a, audio)
                 return (0.7 * audio + 0.3 * filtered).astype(np.float32)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"frequency_tilt calculation note: {e}")
         return audio
 
     def mix_background(self, audio: np.ndarray, bg_noise: np.ndarray, mix_ratio: float = 0.2) -> np.ndarray:

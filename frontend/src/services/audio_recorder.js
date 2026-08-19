@@ -1,6 +1,7 @@
 /**
  * Web Audio API Recorder & Streamer (v2 Pro with Smart Auto-Capture)
  * Thu âm microphone ở chuẩn 16kHz Mono, hỗ trợ Real-time Streaming & Auto-Capture Onset Slicer
+ * Tối ưu hoá bộ nhớ: Tái sử dụng Float32Array cố định để triệt tiêu hiện tượng GC Thrashing.
  */
 import { wsClient } from './websocket_client.js';
 
@@ -18,12 +19,14 @@ export class AudioStreamManager {
     this.isRecordingSnippet = false;
     this.snippetBuffer = [];
 
-    // Auto-Capture Slicer Mode
+    // Auto-Capture Slicer Mode (Bộ đệm vòng tái sử dụng)
     this.isAutoCaptureEnabled = false;
     this.onAutoCapturedSample = null;
     this.autoCaptureThreshold = 0.030;
     this.lastAutoCaptureTime = 0;
-    this.rollingPreBuffer = new Float32Array(1600); // 100ms pre-buffer
+    this.preBufferLen = 1600; // 100ms @ 16kHz
+    this.rollingPreBuffer = new Float32Array(this.preBufferLen);
+    this.snippetScratch = new Float32Array(4000); // 250ms scratch buffer
   }
 
   async startStream() {
@@ -42,6 +45,10 @@ export class AudioStreamManager {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000
       });
+
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
 
       const actualSampleRate = this.audioContext.sampleRate;
 
@@ -73,7 +80,7 @@ export class AudioStreamManager {
           this.snippetBuffer.push(new Float32Array(pcmData));
         }
 
-        // 3. Chế độ Smart Auto-Capture Onset Slicer
+        // 3. Chế độ Smart Auto-Capture Onset Slicer (In-place buffer shift)
         if (this.isAutoCaptureEnabled && this.onAutoCapturedSample) {
           this._processAutoCapture(pcmData);
         }
@@ -127,30 +134,34 @@ export class AudioStreamManager {
   }
 
   _processAutoCapture(chunk) {
-    // Cập nhật rolling pre-buffer
-    const combined = new Float32Array(this.rollingPreBuffer.length + chunk.length);
-    combined.set(this.rollingPreBuffer, 0);
-    combined.set(chunk, this.rollingPreBuffer.length);
-    this.rollingPreBuffer = combined.slice(chunk.length);
+    // 1. Dịch chuyển in-place mảng rolling pre-buffer để loại trừ cấp phát bộ nhớ mới
+    const chunkLen = chunk.length;
+    if (chunkLen < this.preBufferLen) {
+      this.rollingPreBuffer.copyWithin(0, chunkLen);
+      this.rollingPreBuffer.set(chunk, this.preBufferLen - chunkLen);
+    } else {
+      this.rollingPreBuffer.set(chunk.subarray(chunkLen - this.preBufferLen));
+    }
 
-    // Tính peak của chunk
+    // 2. Tính peak của chunk
     let peak = 0;
-    for (let i = 0; i < chunk.length; i++) {
+    for (let i = 0; i < chunkLen; i++) {
       const abs = Math.abs(chunk[i]);
       if (abs > peak) peak = abs;
     }
 
     const now = performance.now();
-    // Điều kiện onset và debounce 350ms
+    // 3. Điều kiện onset và debounce 350ms
     if (peak >= this.autoCaptureThreshold && (now - this.lastAutoCaptureTime > 350)) {
       this.lastAutoCaptureTime = now;
 
-      // Cắt cửa sổ 250ms (4000 samples) kết hợp pre-buffer và chunk
+      // Cắt cửa sổ 250ms (4000 samples)
       const targetLength = 4000;
       const snippet = new Float32Array(targetLength);
-      const preLen = Math.min(this.rollingPreBuffer.length, 1200);
-      snippet.set(this.rollingPreBuffer.slice(this.rollingPreBuffer.length - preLen), 0);
-      snippet.set(chunk, preLen);
+      const preLen = Math.min(this.preBufferLen, 1200);
+      
+      snippet.set(this.rollingPreBuffer.subarray(this.preBufferLen - preLen), 0);
+      snippet.set(chunk.subarray(0, Math.min(chunkLen, targetLength - preLen)), preLen);
 
       // Gọi callback tải mẫu lên
       try {

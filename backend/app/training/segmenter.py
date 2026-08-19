@@ -31,7 +31,7 @@ class AudioSegmenter:
             return []
 
         clip_samples = int(self.sample_rate * clip_duration_sec)
-        pre_onset_samples = int(self.sample_rate * 0.05) # 50ms trước đỉnh
+        pre_onset_samples = int(self.sample_rate * 0.05)  # 50ms trước đỉnh
         min_gap_samples = int(self.sample_rate * min_gap_sec)
 
         # 1. Lọc thông dải
@@ -54,8 +54,8 @@ class AudioSegmenter:
             end = start + frame_size
             frame = filtered[start:end]
             
-            rms = np.sqrt(np.mean(frame ** 2) + 1e-10)
-            peak = np.max(np.abs(frame))
+            rms = float(np.sqrt(np.mean(frame ** 2) + 1e-10))
+            peak = float(np.max(np.abs(frame)))
             crest = peak / (rms + 1e-10)
             
             energies.append(peak)
@@ -81,7 +81,7 @@ class AudioSegmenter:
                         # Tìm mẫu có biên độ cực đại tuyệt đối quanh vùng đỉnh (+-10ms)
                         search_start = max(0, sample_idx - frame_size)
                         search_end = min(len(audio), sample_idx + frame_size)
-                        exact_peak = search_start + np.argmax(np.abs(audio[search_start:search_end]))
+                        exact_peak = search_start + int(np.argmax(np.abs(audio[search_start:search_end])))
                         
                         detected_peak_indices.append(exact_peak)
                         last_peak_idx = exact_peak
@@ -100,8 +100,10 @@ class AudioSegmenter:
             dst_start = max(0, -start_pos)
             dst_end = dst_start + (src_end - src_start)
 
-            clip[dst_start:dst_end] = audio[src_start:src_end]
+            if src_end > src_start and dst_end <= clip_samples:
+                clip[dst_start:dst_end] = audio[src_start:src_end]
             
+            clip = np.nan_to_num(clip, nan=0.0)
             # Đảm bảo mẫu có âm lượng hợp lệ (không phải khoảng lặng)
             if np.max(np.abs(clip)) > 0.015:
                 extracted_clips.append(clip)
@@ -130,9 +132,10 @@ class AudioSegmenter:
         idx = 0
         while idx + clip_samples <= len(audio):
             clip = audio[idx : idx + clip_samples].astype(np.float32)
+            clip = np.nan_to_num(clip, nan=0.0)
             
             # Loại trừ khoảng lặng hoàn toàn (RMS < 0.0005)
-            rms = np.sqrt(np.mean(clip ** 2) + 1e-10)
+            rms = float(np.sqrt(np.mean(clip ** 2) + 1e-10))
             if rms >= 0.0005:
                 extracted_clips.append(clip)
             

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from pydantic import BaseModel
+from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -72,7 +73,7 @@ class SmartLightConfig(BaseModel):
     color: str = "#00e5ff"             # Hex color (Cyan neon default)
     mode: str = "solid"                # "solid" | "rainbow" | "pulse" | "party"
     double_clap_action: str = "toggle_power"   # 2 tiếng vỗ liên tiếp (Double Clap) -> Bật/Tắt Đèn
-    webhook_url: str = "http://192.168.2.171:8123/api/webhook/vo_tay_toggle_den" # Webhook Home Assistant / ESP32
+    webhook_url: str = os.getenv("WEBHOOK_URL", "") # Webhook Home Assistant / ESP32 (cấu hình qua ENV)
 
 class AdaptiveNoiseConfig(BaseModel):
     enabled: bool = True                  # Bật/tắt tự động căn chỉnh độ ồn nền liên tục
@@ -89,10 +90,10 @@ class AppSettings(BaseModel):
     ml: MLConfig = MLConfig()
     pattern: PatternConfig = PatternConfig()
     light: SmartLightConfig = SmartLightConfig()
-    windows_studio_url: str = os.getenv("WINDOWS_STUDIO_URL", "http://192.168.2.134:8001")
-    linux_server_url: str = os.getenv("LINUX_SERVER_URL", "http://192.168.2.171:8000")
-    auto_collect_true_claps: bool = True  # Tự động gửi mẫu vỗ tay thành công về Windows để học liên tục
+    windows_studio_url: str = os.getenv("WINDOWS_STUDIO_URL", "http://127.0.0.1:8001")
+    linux_server_url: str = os.getenv("LINUX_SERVER_URL", "http://127.0.0.1:8000")
+    auto_collect_true_claps: bool = os.getenv("AUTO_COLLECT_TRUE_CLAPS", "true").lower() in ("true", "1", "yes")
+    studio_api_token: str = os.getenv("STUDIO_API_TOKEN", "")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
 settings = AppSettings()
-
-

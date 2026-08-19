@@ -4,30 +4,47 @@ from ..config import settings
 
 class AdaptiveNoiseFloorEstimator:
     """
-    Bộ theo dõi và tự động căn chỉnh mức ồn nền phòng thời gian thực (Continuous Noise Floor Tracker).
+    Bộ theo dõi và tự động căn chỉnh mức ồn nền phòng thời gian thực (Adaptive Percentile Noise Estimator).
+    Hoạt động 24/7 với bộ đệm cố định (Zero-Leak Bounded Buffer) và Exponential Moving Average (EMA).
     
-    Cơ chế hoạt động:
-    1. Đo lường liên tục RMS và Peak của tín hiệu âm thanh môi trường.
-    2. Bộ lọc loại trừ xung (Transient Rejection): Khi có âm thanh tăng đột ngột (tiếng vỗ tay, gõ bàn),
-       hệ thống đóng băng cập nhật để tiếng vỗ tay không làm tăng ngưỡng ồn nền.
+    Cơ chế:
+    1. Đo lường liên tục RMS và Peak của tín hiệu môi trường.
+    2. Theo dõi phân vị (Percentile Tracking p10, p50, p90) trên cửa sổ trượt 100 khung hình gần nhất.
     3. Cập nhật bất đối xứng (Asymmetric EMA):
-       - Tăng nhanh vừa phải khi phòng có nguồn ồn liên tục mới (bật quạt, máy lạnh).
+       - Tăng nhanh khi có nguồn ồn liên tục mới (quạt gió, máy lạnh bật).
        - Giảm chậm rãi, ổn định khi phòng yên tĩnh trở lại.
-    4. Tính toán Ngưỡng Động (Dynamic Thresholds):
-       - Dynamic Energy Threshold: Tự động dịch chuyển theo biên độ đỉnh của tiếng ồn phòng.
-       - Dynamic Crest Factor & AI Confidence: Tự động nới lỏng khi phòng yên tĩnh (bắt vỗ nhẹ xa 3-4m)
-         và siết chặt khi phòng ồn (chống báo giả).
+    4. Tự động tính toán các ngưỡng động:
+       - Dynamic Energy Threshold (nổi trên nền đỉnh ồn).
+       - Dynamic Crest Factor.
+       - Dynamic High-Frequency Ratio Threshold.
+       - Dynamic AI Confidence Threshold.
     """
-    def __init__(self):
-        # Giá trị khởi tạo mặc định (môi trường phòng tiêu chuẩn)
+    def __init__(self, history_len: int = 120):
+        self.history_len = history_len
+        # Bộ đệm cố định lưu RMS lịch sử để tính phân vị (Percentiles)
+        self.rms_history = np.full(history_len, 0.008, dtype=np.float32)
+        self.history_idx = 0
+        self.history_count = 0
+        
+        # Mức ồn nền khởi tạo
         self.noise_floor_rms: float = 0.008
         self.noise_floor_peak: float = 0.015
         self.hf_noise_ratio: float = 0.25
         
-        # Trạng thái hiện tại
-        self.ambient_status: str = "normal"  # "quiet" | "normal" | "noisy"
+        # Phân vị năng lượng ồn
+        self.p10_rms: float = 0.006
+        self.p50_rms: float = 0.008
+        self.p90_rms: float = 0.012
+        
+        # Trạng thái âm học phòng
+        self.ambient_status: str = "normal"  # "quiet" | "normal" | "noisy" | "very_noisy"
+        self.ambient_label: str = "☀️ Phòng Tiêu Chuẩn"
+        self.current_snr_db: float = 0.0
+        
+        # Các ngưỡng động
         self.dynamic_energy_thresh: float = settings.dsp.energy_threshold
         self.dynamic_crest_thresh: float = settings.dsp.crest_factor_min
+        self.dynamic_hf_thresh: float = settings.dsp.hf_energy_ratio_min
         self.dynamic_confidence_thresh: float = settings.ml.confidence_threshold
         
         self.initialized_samples: int = 0
@@ -46,12 +63,10 @@ class AdaptiveNoiseFloorEstimator:
         """
         cfg = settings.adaptive_noise
 
-        # Phân biệt xung đột ngột (Clap Transient) vs Tiếng ồn nền liên tục (Ambient Noise):
-        # Tiếng vỗ tay: Dạng xung nhọn (Crest Factor >= 2.8), tăng vọt trong 1-2 chunks ngắn.
-        # Tiếng ồn nền (quạt gió, máy lạnh, xe cộ): Dạng sóng đều (Crest Factor < 2.8) hoặc kéo dài liên tục.
+        # 1. Phân biệt xung đột ngột (Clap Transient) vs Tiếng ồn nền liên tục (Ambient Noise)
         is_impulsive_spike = (
             is_transient or 
-            (chunk_crest >= 2.8 and chunk_peak > max(0.040, self.noise_floor_peak * cfg.transient_rejection_ratio))
+            (chunk_crest >= 2.8 and chunk_peak > max(0.035, self.noise_floor_peak * cfg.transient_rejection_ratio))
         )
         
         if is_impulsive_spike:
@@ -59,67 +74,93 @@ class AdaptiveNoiseFloorEstimator:
         else:
             self.sustained_frames += 1
 
-        # Cập nhật mức ồn nền khi là âm thanh nền ổn định, hoặc âm thanh lớn kéo dài liên tục > 5 chunks
+        # 2. Cập nhật mức ồn nền khi là âm thanh nền ổn định hoặc âm thanh lớn kéo dài liên tục > 5 chunks
         if not is_impulsive_spike or self.sustained_frames > 5:
+            # Ghi vào bộ đệm vòng RMS lịch sử
+            self.rms_history[self.history_idx] = chunk_rms
+            self.history_idx = (self.history_idx + 1) % self.history_len
+            if self.history_count < self.history_len:
+                self.history_count += 1
+
             # Giai đoạn khởi động nhanh (10 chunks đầu tiên)
             if self.initialized_samples < 10:
-                alpha = 0.35
+                alpha = 0.40
                 self.initialized_samples += 1
             else:
-                # Cập nhật bất đối xứng
+                # Cập nhật bất đối xứng: tăng nhanh khi ồn, giảm chậm vừa phải khi yên tĩnh
                 if chunk_rms > self.noise_floor_rms:
-                    alpha = cfg.adaptation_speed  # Tăng vừa phải khi ồn tăng
+                    alpha = cfg.adaptation_speed * 1.2
                 else:
-                    alpha = cfg.adaptation_speed * 0.4  # Giảm chậm khi ồn hạ
+                    alpha = cfg.adaptation_speed * 0.6
 
             self.noise_floor_rms = (1.0 - alpha) * self.noise_floor_rms + alpha * chunk_rms
             self.noise_floor_peak = (1.0 - alpha) * self.noise_floor_peak + alpha * chunk_peak
             self.hf_noise_ratio = (1.0 - alpha) * self.hf_noise_ratio + alpha * chunk_hf
 
-        # Đảm bảo noise floor không bị tràn hoặc quá bé
-        self.noise_floor_rms = max(0.001, min(0.20, self.noise_floor_rms))
-        self.noise_floor_peak = max(0.003, min(0.30, self.noise_floor_peak))
+        # Đảm bảo noise floor nằm trong dải vật lý hợp lệ
+        self.noise_floor_rms = float(np.clip(self.noise_floor_rms, 0.001, 0.25))
+        self.noise_floor_peak = float(np.clip(self.noise_floor_peak, 0.003, 0.35))
 
-        # Phân loại trạng thái âm học phòng & Căn chỉnh Day/Night
+        # 3. Tính phân vị năng lượng (Percentiles) trên dữ liệu thực tế đã tích lũy
+        if self.history_count >= 10:
+            valid_hist = self.rms_history[:self.history_count]
+            self.p10_rms = float(np.percentile(valid_hist, 10))
+            self.p50_rms = float(np.percentile(valid_hist, 50))
+            self.p90_rms = float(np.percentile(valid_hist, 90))
+
+        # 4. Phân loại trạng thái âm học môi trường
         if self.noise_floor_rms < 0.009:
-            self.ambient_status = "quiet"     # Phòng rất yên tĩnh (Đêm khuya / vỗ xa 3-5m)
+            self.ambient_status = "quiet"
             self.ambient_label = "🌙 Phòng Yên Tĩnh (Bắt xa 3-5m)"
-        elif self.noise_floor_rms > 0.032:
-            self.ambient_status = "noisy"     # Phòng nhiều tạp âm
-            self.ambient_label = "🌪️ Phòng Ồn (Chống báo giả cao)"
+        elif self.noise_floor_rms > 0.045:
+            self.ambient_status = "very_noisy"
+            self.ambient_label = "🚨 Phòng Cực Ồn (Siết chặt ngưỡng)"
+        elif self.noise_floor_rms > 0.025:
+            self.ambient_status = "noisy"
+            self.ambient_label = "🌪️ Phòng Nhiều Tạp Âm"
         else:
-            self.ambient_status = "normal"    # Phòng tiêu chuẩn
+            self.ambient_status = "normal"
             self.ambient_label = "☀️ Phòng Tiêu Chuẩn"
 
-        # Tính toán tỷ lệ SNR thời gian thực (dB)
+        # 5. Tính toán tỷ lệ SNR thời gian thực (dB)
         snr_ratio = max(0.0001, chunk_rms) / max(0.0001, self.noise_floor_rms)
         self.current_snr_db = round(float(20.0 * np.log10(snr_ratio)), 1)
 
-        # Tính toán các ngưỡng động
+        # 6. Tính toán Ngưỡng Động (Dynamic Floating Thresholds)
         if cfg.enabled:
-            # 1. Dynamic Energy Threshold:
-            raw_energy = self.noise_floor_peak * cfg.margin_factor + 0.004
-            self.dynamic_energy_thresh = max(
+            # A. Dynamic Energy Threshold:
+            # Ngưỡng năng lượng nổi trên nền đỉnh ồn (p90 hoặc noise_floor_peak)
+            effective_peak_base = max(self.noise_floor_peak, self.p90_rms * 2.2)
+            raw_energy = effective_peak_base * cfg.margin_factor + 0.003
+            self.dynamic_energy_thresh = float(np.clip(
+                raw_energy, 
                 cfg.min_energy_threshold, 
-                min(cfg.max_energy_threshold, raw_energy)
-            )
+                cfg.max_energy_threshold
+            ))
 
-            # 2. Dynamic Crest Factor & AI Confidence:
+            # B. Dynamic Crest Factor & High Frequency Ratio & AI Confidence
             if self.ambient_status == "quiet":
-                # Nới lỏng nhẹ để bắt tiếng vỗ xa nhưng vẫn giữ độ tin cậy AI cao
-                self.dynamic_crest_thresh = max(2.1, settings.dsp.crest_factor_min - 0.4)
-                self.dynamic_confidence_thresh = max(0.66, settings.ml.confidence_threshold - 0.08)
+                # Nới lỏng nhẹ để bắt tiếng vỗ tay nhẹ / ở khoảng cách xa 3-5m
+                self.dynamic_crest_thresh = max(2.0, settings.dsp.crest_factor_min - 0.4)
+                self.dynamic_hf_thresh = max(0.28, settings.dsp.hf_energy_ratio_min - 0.04)
+                self.dynamic_confidence_thresh = max(0.65, settings.ml.confidence_threshold - 0.08)
+            elif self.ambient_status == "very_noisy":
+                # Siết chặt tối đa để chống mọi loại báo giả
+                self.dynamic_crest_thresh = min(3.8, settings.dsp.crest_factor_min + 0.8)
+                self.dynamic_hf_thresh = min(0.40, settings.dsp.hf_energy_ratio_min + 0.06)
+                self.dynamic_confidence_thresh = min(0.88, settings.ml.confidence_threshold + 0.10)
             elif self.ambient_status == "noisy":
-                # Siết chặt để chống báo giả từ tiếng ồn môi trường
-                self.dynamic_crest_thresh = min(3.5, settings.dsp.crest_factor_min + 0.6)
-                self.dynamic_confidence_thresh = min(0.85, settings.ml.confidence_threshold + 0.08)
+                self.dynamic_crest_thresh = min(3.4, settings.dsp.crest_factor_min + 0.5)
+                self.dynamic_hf_thresh = min(0.36, settings.dsp.hf_energy_ratio_min + 0.03)
+                self.dynamic_confidence_thresh = min(0.84, settings.ml.confidence_threshold + 0.06)
             else:
                 self.dynamic_crest_thresh = settings.dsp.crest_factor_min
+                self.dynamic_hf_thresh = settings.dsp.hf_energy_ratio_min
                 self.dynamic_confidence_thresh = settings.ml.confidence_threshold
         else:
-            # Khi tắt adaptive, dùng ngưỡng tĩnh trong config
             self.dynamic_energy_thresh = settings.dsp.energy_threshold
             self.dynamic_crest_thresh = settings.dsp.crest_factor_min
+            self.dynamic_hf_thresh = settings.dsp.hf_energy_ratio_min
             self.dynamic_confidence_thresh = settings.ml.confidence_threshold
 
         return self.get_state()
@@ -129,12 +170,16 @@ class AdaptiveNoiseFloorEstimator:
         return {
             "noise_floor_rms": round(float(self.noise_floor_rms), 4),
             "noise_floor_peak": round(float(self.noise_floor_peak), 4),
+            "p10_rms": round(float(self.p10_rms), 4),
+            "p50_rms": round(float(self.p50_rms), 4),
+            "p90_rms": round(float(self.p90_rms), 4),
             "hf_noise_ratio": round(float(self.hf_noise_ratio), 3),
             "ambient_status": self.ambient_status,
-            "ambient_label": getattr(self, "ambient_label", "☀️ Phòng Tiêu Chuẩn"),
+            "ambient_label": self.ambient_label,
             "snr_db": getattr(self, "current_snr_db", 0.0),
             "dynamic_energy_thresh": round(float(self.dynamic_energy_thresh), 4),
             "dynamic_crest_thresh": round(float(self.dynamic_crest_thresh), 2),
+            "dynamic_hf_thresh": round(float(self.dynamic_hf_thresh), 3),
             "dynamic_confidence_thresh": round(float(self.dynamic_confidence_thresh), 2),
             "auto_adaptive_enabled": settings.adaptive_noise.enabled
         }

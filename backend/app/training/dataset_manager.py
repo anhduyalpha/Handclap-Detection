@@ -6,10 +6,12 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from ..config import DATA_DIR, USER_PROFILES_DIR, DEFAULT_SAMPLES_DIR
+from ..core.security import safe_path_resolve, sanitize_identifier
 
 CATEGORIES = {
     "claps": "Tiếng Vỗ Tay",
-    "false_positives": "Mẫu Báo Giả (Hard Negatives)",
+    "false_positives": "Mẫu Báo Giả (False Positives)",
+    "hard_negatives": "Mẫu Khó Thu Tự Động (Mined Negatives)",
     "speech": "Tiếng Nói & Hơi Thở",
     "typing": "Gõ Bàn & Bàn Phím",
     "snaps": "Va Chạm & Búng Tay",
@@ -24,6 +26,8 @@ class DatasetManager:
     data/user_profiles/<profile_name>/
       ├── meta.json
       ├── claps/
+      ├── false_positives/
+      ├── hard_negatives/
       ├── typing/
       ├── speech/
       ├── snaps/
@@ -34,7 +38,8 @@ class DatasetManager:
         self._ensure_default_seed_data()
 
     def get_profile_dir(self, profile_name: str) -> Path:
-        p_dir = USER_PROFILES_DIR / profile_name
+        clean_name = sanitize_identifier(profile_name, "profile_name")
+        p_dir = safe_path_resolve(USER_PROFILES_DIR, clean_name)
         for cat in CATEGORIES.keys():
             (p_dir / cat).mkdir(parents=True, exist_ok=True)
         return p_dir
@@ -84,17 +89,22 @@ class DatasetManager:
         Lưu một mẫu âm thanh vào profile và category tương ứng.
         Tự động tính toán các chỉ số acoustic và lưu cả .npy lẫn .wav.
         """
-        p_dir = self.get_profile_dir(profile_name)
-        cat_dir = p_dir / category
+        clean_prof = sanitize_identifier(profile_name, "profile_name")
+        clean_cat = sanitize_identifier(category, "category")
+        
+        p_dir = self.get_profile_dir(clean_prof)
+        cat_dir = safe_path_resolve(p_dir, clean_cat)
         cat_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp_str = time.strftime("%Y%m%d_%H%M%S")
         if not sample_id:
             existing = len(list(cat_dir.glob("*.npy")))
-            sample_id = f"{category}_{timestamp_str}_{existing + 1:03d}"
+            sample_id = f"{clean_cat}_{timestamp_str}_{existing + 1:03d}"
+        else:
+            sample_id = sanitize_identifier(sample_id, "sample_id")
 
-        npy_path = cat_dir / f"{sample_id}.npy"
-        wav_path = cat_dir / f"{sample_id}.wav"
+        npy_path = safe_path_resolve(cat_dir, f"{sample_id}.npy")
+        wav_path = safe_path_resolve(cat_dir, f"{sample_id}.wav")
 
         # Chuẩn hóa âm thanh
         peak_amp = float(np.max(np.abs(audio))) if len(audio) > 0 else 0.0
@@ -107,23 +117,28 @@ class DatasetManager:
 
         return {
             "sample_id": sample_id,
-            "category": category,
+            "category": clean_cat,
             "peak_amp": round(peak_amp, 4),
             "rms_amp": round(rms_amp, 4),
             "duration_sec": duration_sec,
-            "wav_url": f"/api/training/audio/{profile_name}/{category}/{sample_id}.wav",
+            "wav_url": f"/api/training/audio/{clean_prof}/{clean_cat}/{sample_id}.wav",
             "created_at": time.strftime("%H:%M:%S")
         }
 
     def list_samples_detailed(self, profile_name: str, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Lấy danh sách chi tiết các mẫu đã thu để hiển thị player trên UI"""
-        p_dir = self.get_profile_dir(profile_name)
+        clean_prof = sanitize_identifier(profile_name, "profile_name")
+        p_dir = self.get_profile_dir(clean_prof)
         samples = []
 
-        categories_to_scan = [category] if category else list(CATEGORIES.keys())
+        if category:
+            clean_cat = sanitize_identifier(category, "category")
+            categories_to_scan = [clean_cat]
+        else:
+            categories_to_scan = list(CATEGORIES.keys())
 
         for cat in categories_to_scan:
-            cat_dir = p_dir / cat
+            cat_dir = safe_path_resolve(p_dir, cat)
             if not cat_dir.exists():
                 continue
 
@@ -148,7 +163,7 @@ class DatasetManager:
                     "peak_amp": round(peak, 3),
                     "rms_amp": round(rms, 3),
                     "duration_sec": duration,
-                    "wav_url": f"/api/training/audio/{profile_name}/{cat}/{sample_id}.wav",
+                    "wav_url": f"/api/training/audio/{clean_prof}/{cat}/{sample_id}.wav",
                     "created_at": created_at
                 })
 
@@ -156,10 +171,14 @@ class DatasetManager:
 
     def delete_sample(self, profile_name: str, category: str, sample_id: str) -> bool:
         """Xoá 1 mẫu âm thanh theo id"""
-        p_dir = self.get_profile_dir(profile_name)
-        cat_dir = p_dir / category
-        npy_path = cat_dir / f"{sample_id}.npy"
-        wav_path = cat_dir / f"{sample_id}.wav"
+        clean_prof = sanitize_identifier(profile_name, "profile_name")
+        clean_cat = sanitize_identifier(category, "category")
+        clean_id = sanitize_identifier(sample_id, "sample_id")
+
+        p_dir = self.get_profile_dir(clean_prof)
+        cat_dir = safe_path_resolve(p_dir, clean_cat)
+        npy_path = safe_path_resolve(cat_dir, f"{clean_id}.npy")
+        wav_path = safe_path_resolve(cat_dir, f"{clean_id}.wav")
 
         deleted = False
         if npy_path.exists():
@@ -172,19 +191,22 @@ class DatasetManager:
 
     def clear_category(self, profile_name: str, category: str) -> int:
         """Xoá toàn bộ mẫu của 1 danh mục"""
-        p_dir = self.get_profile_dir(profile_name)
-        cat_dir = p_dir / category
+        clean_prof = sanitize_identifier(profile_name, "profile_name")
+        clean_cat = sanitize_identifier(category, "category")
+
+        p_dir = self.get_profile_dir(clean_prof)
+        cat_dir = safe_path_resolve(p_dir, clean_cat)
         if not cat_dir.exists():
             return 0
 
         count = 0
-        for f in cat_dir.glob("*.*"):
+        for f in list(cat_dir.glob("*.npy")) + list(cat_dir.glob("*.wav")):
             try:
                 f.unlink()
                 count += 1
             except Exception:
                 pass
-        return count // 2 # vì có cả .npy và .wav
+        return count // 2
 
     def load_dataset(self, profile_name: str) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """Tải toàn bộ mẫu claps và tất cả các loại tiếng ồn của profile kèm seed noises"""
@@ -196,20 +218,23 @@ class DatasetManager:
         Tải toàn bộ dataset và phân tách rõ 3 nhóm:
         - claps: Các mẫu vỗ tay
         - noises: Các mẫu tiếng ồn thường
-        - false_positives: Các mẫu báo giả (Hard Negatives) cần nhân bản x2
+        - false_positives: Các mẫu báo giả & mined hard negatives cần nhân bản x2
         """
-        p_dir = self.get_profile_dir(profile_name)
+        clean_prof = sanitize_identifier(profile_name, "profile_name")
+        p_dir = self.get_profile_dir(clean_prof)
         
         claps = []
-        for f in (p_dir / "claps").glob("*.npy"):
-            try:
-                claps.append(np.load(f))
-            except Exception:
-                pass
+        claps_dir = safe_path_resolve(p_dir, "claps")
+        if claps_dir.exists():
+            for f in claps_dir.glob("*.npy"):
+                try:
+                    claps.append(np.load(f))
+                except Exception:
+                    pass
 
         noises = []
         for cat in ["typing", "speech", "snaps", "ambient", "noises"]:
-            cat_dir = p_dir / cat
+            cat_dir = safe_path_resolve(p_dir, cat)
             if cat_dir.exists():
                 for f in cat_dir.glob("*.npy"):
                     try:
@@ -218,13 +243,14 @@ class DatasetManager:
                         pass
 
         false_positives = []
-        fp_dir = p_dir / "false_positives"
-        if fp_dir.exists():
-            for f in fp_dir.glob("*.npy"):
-                try:
-                    false_positives.append(np.load(f))
-                except Exception:
-                    pass
+        for cat in ["false_positives", "hard_negatives"]:
+            fp_dir = safe_path_resolve(p_dir, cat)
+            if fp_dir.exists():
+                for f in fp_dir.glob("*.npy"):
+                    try:
+                        false_positives.append(np.load(f))
+                    except Exception:
+                        pass
 
         # Luôn bổ sung kho mẫu hạt giống chuẩn đa dạng (tiếng nói, kim loại, đóng cửa)
         def_claps, def_noises = self.load_default_seed_data()
@@ -254,7 +280,7 @@ class DatasetManager:
         noises_dir.mkdir(parents=True, exist_ok=True)
 
         sr = self.sample_rate
-        duration = 0.25 # 250ms = 4000 samples
+        duration = 0.25  # 250ms = 4000 samples
         t = np.linspace(0, duration, int(sr * duration), endpoint=False)
 
         np.random.seed(42)
@@ -262,7 +288,7 @@ class DatasetManager:
         # 1. 20 Mẫu Vỗ Tay Mô Phỏng (Synthetic Claps)
         for i in range(20):
             center_freq = np.random.uniform(2000, 5000)
-            decay_rate = np.random.uniform(25, 45) # ms - phân rã cực nhanh
+            decay_rate = np.random.uniform(25, 45)  # ms
             envelope = np.exp(-t * (1000.0 / decay_rate))
             noise = np.random.normal(0, 1, len(t))
             resonance = np.sin(2 * np.pi * center_freq * t) + 0.4 * np.sin(2 * np.pi * (center_freq * 1.5) * t)
@@ -290,7 +316,7 @@ class DatasetManager:
                 # Tiếng kim loại, chìa khóa, chén đĩa (Metallic High-Frequency Resonances 3.5kHz - 6.5kHz)
                 metal_freq = np.random.uniform(3400, 6800)
                 metal_freq2 = metal_freq * np.random.uniform(1.2, 1.6)
-                env = np.exp(-t * np.random.uniform(8, 20)) # Phân rã chậm kéo dài
+                env = np.exp(-t * np.random.uniform(8, 20))
                 sample = (
                     np.sin(2 * np.pi * metal_freq * t) + 
                     0.7 * np.sin(2 * np.pi * metal_freq2 * t) + 

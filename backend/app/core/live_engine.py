@@ -1,7 +1,7 @@
 import numpy as np
 import time
+import logging
 import threading
-import requests
 from typing import Dict, Any, Optional, Callable
 from .audio_stream import AudioRingBuffer
 from .dsp_detector import DSPTransientDetector
@@ -9,15 +9,21 @@ from .feature_extractor import AudioFeatureExtractor
 from .pattern_matcher import ClapPatternMatcher
 from .noise_estimator import AdaptiveNoiseFloorEstimator
 from .trigger_history import trigger_history
+from .hard_negative_miner import hard_negative_miner
+from .telemetry import system_telemetry
 from ..models.classifier import ClapClassifier
 from ..smart_home.action_dispatcher import action_dispatcher
 from ..config import settings
 
+logger = logging.getLogger("handclap.live_engine")
+
 class LiveDetectionEngine:
     """
-    Cỗ máy nhận diện âm thanh thời gian thực (Dual-Stage Live Engine).
+    Cỗ máy nhận diện âm thanh thời gian thực (Dual-Stage Live Engine Pro).
     Kết nối đồng bộ toàn bộ luồng xử lý:
-    Stream Audio (WebSocket) -> Ring Buffer -> Adaptive Noise Tracking -> Stage 1 DSP -> Stage 2 ML -> Pattern Matcher -> Action Dispatcher -> Trigger History
+    Stream Audio -> Zero-Copy Ring Buffer -> Adaptive Percentile Noise Tracking ->
+    Stage 1 DSP Envelope Validation -> Stage 2 Double-Buffered ML -> Active Hard Negative Miner ->
+    Instant Pattern Matcher -> Action Dispatcher -> System Telemetry & History.
     """
     def __init__(self, broadcast_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
         self.sample_rate = settings.audio.sample_rate
@@ -42,6 +48,7 @@ class LiveDetectionEngine:
             action_dispatcher.set_broadcast_callback(broadcast_callback)
 
         self.last_detection_time = 0.0
+        self._check_counter = 0
 
     def set_broadcast_callback(self, callback: Callable[[Dict[str, Any]], None]):
         self.broadcast_callback = callback
@@ -53,7 +60,8 @@ class LiveDetectionEngine:
 
     def _on_pattern_detected(self, pattern: str, count: int, events_meta: list):
         """Xử lý khi PatternMatcher phát hiện chuỗi vỗ tay hoàn chỉnh"""
-        print(f"[LiveEngine] [Pattern Matched] Pattern='{pattern}', Count={count} clap(s) -> Dispatching action & Webhook...")
+        logger.info(f"[Pattern Matched] Pattern='{pattern}', Count={count} clap(s) -> Dispatching action & Webhook...")
+        system_telemetry.record_trigger_event()
         action_dispatcher.dispatch_pattern(pattern, count, events_meta)
 
         # Trích xuất 800ms âm thanh quanh 2 cú vỗ tay để lưu vào TriggerHistory
@@ -79,7 +87,7 @@ class LiveDetectionEngine:
                 "event": record
             })
 
-        # Tự động gửi mẫu True Clap sang Windows nếu được bật (rate-limited: tối đa 1 mẫu mỗi 15s)
+        # Tự động gửi mẫu True Clap sang Windows nếu được bật (rate-limited)
         if pattern == "double" and avg_conf >= 0.85:
             if getattr(settings, "windows_studio_url", None) and getattr(settings, "auto_collect_true_claps", True):
                 now_t = time.time()
@@ -93,23 +101,24 @@ class LiveDetectionEngine:
                             audio_clip=audio_clip,
                             target_url=settings.windows_studio_url
                         )
-                        print("[LiveEngine] [ActiveLearning] True Double-Clap sample automatically forwarded to Windows Studio!")
+                        logger.info("True Double-Clap sample automatically forwarded to Windows Studio!")
                     except Exception as err:
-                        print(f"[LiveEngine] ActiveLearning note: {err}")
+                        logger.debug(f"ActiveLearning note: {err}")
 
     def process_chunk(self, audio_chunk: np.ndarray) -> Dict[str, Any]:
         """
         Xử lý từng chunk âm thanh float32 nhận được từ client hoặc server mic.
-        Trả về metrics thời gian thực để hiển thị visualizer trên UI.
+        Đo lường độ trễ chính xác và tự động khai thác mẫu khó (Hard Negative Mining).
         """
+        t0 = time.perf_counter()
         if len(audio_chunk) == 0:
             return {"rms": 0.0, "peak": 0.0, "stage1": False, "stage2": False}
 
         # 1. Ghi vào Ring Buffer
         self.ring_buffer.write(audio_chunk)
 
-        # Kiểm tra tự động Hot-Reload nếu có model mới từ Windows sync sang (mỗi ~3s)
-        self._check_counter = getattr(self, "_check_counter", 0) + 1
+        # Kiểm tra tự động Hot-Reload nếu có model mới trên đĩa (mỗi ~3s)
+        self._check_counter += 1
         if self._check_counter % 100 == 0:
             self.classifier.check_and_reload_if_updated()
 
@@ -117,7 +126,7 @@ class LiveDetectionEngine:
         history_samples = int(self.sample_rate * 0.15)
         recent_history = self.ring_buffer.get_recent(history_samples)
 
-        # 2. Stage 1: DSP Transient Detector với Ngưỡng Động
+        # 2. Stage 1: DSP Transient Envelope Validator với Ngưỡng Động
         energy_thresh = self.noise_estimator.dynamic_energy_thresh if settings.adaptive_noise.enabled else settings.dsp.energy_threshold
         crest_thresh = self.noise_estimator.dynamic_crest_thresh if settings.adaptive_noise.enabled else settings.dsp.crest_factor_min
         confidence_thresh = self.noise_estimator.dynamic_confidence_thresh if settings.adaptive_noise.enabled else settings.ml.confidence_threshold
@@ -127,22 +136,25 @@ class LiveDetectionEngine:
             recent_history=recent_history,
             energy_thresh=energy_thresh,
             crest_thresh=crest_thresh,
-            hf_ratio_thresh=settings.dsp.hf_energy_ratio_min
+            hf_ratio_thresh=self.noise_estimator.dynamic_hf_thresh if settings.adaptive_noise.enabled else settings.dsp.hf_energy_ratio_min
         )
 
-        # 3. Cập nhật Bộ ước lượng ồn nền liên tục (Adaptive Noise Floor Tracker)
+        # 3. Cập nhật Bộ ước lượng ồn nền phân vị (Percentile Noise Tracker)
         peak_amp = dsp_metrics.get("peak_amp", 0.0)
         rms_amp = dsp_metrics.get("rms_amp", 0.0)
         crest_factor = dsp_metrics.get("crest_factor", 0.0)
         hf_ratio = dsp_metrics.get("hf_ratio", 0.0)
 
-        self.noise_estimator.update(
+        noise_state = self.noise_estimator.update(
             chunk_rms=rms_amp,
             chunk_peak=peak_amp,
             chunk_crest=crest_factor,
             chunk_hf=hf_ratio,
             is_transient=is_transient
         )
+
+        t_dsp = (time.perf_counter() - t0) * 1000.0
+        system_telemetry.record_chunk(t_dsp)
 
         telemetry = {
             "type": "TELEMETRY",
@@ -153,40 +165,46 @@ class LiveDetectionEngine:
             "is_transient": is_transient,
             "clap_detected": False,
             "confidence": 0.0,
-            # Các trường Căn chỉnh ồn nền liên tục
-            "noise_floor_rms": round(float(self.noise_estimator.noise_floor_rms), 4),
-            "noise_floor_peak": round(float(self.noise_estimator.noise_floor_peak), 4),
-            "dynamic_energy_thresh": round(float(self.noise_estimator.dynamic_energy_thresh), 4),
-            "dynamic_crest_thresh": round(float(self.noise_estimator.dynamic_crest_thresh), 2),
-            "ambient_status": self.noise_estimator.ambient_status,
-            "ambient_label": getattr(self.noise_estimator, "ambient_label", "☀️ Phòng Tiêu Chuẩn"),
-            "snr_db": getattr(self.noise_estimator, "current_snr_db", 0.0),
+            "dsp_latency_ms": round(t_dsp, 2),
+            # Chỉ số căn chỉnh ồn nền
+            "noise_floor_rms": noise_state["noise_floor_rms"],
+            "noise_floor_peak": noise_state["noise_floor_peak"],
+            "p10_rms": noise_state["p10_rms"],
+            "p50_rms": noise_state["p50_rms"],
+            "p90_rms": noise_state["p90_rms"],
+            "dynamic_energy_thresh": noise_state["dynamic_energy_thresh"],
+            "dynamic_crest_thresh": noise_state["dynamic_crest_thresh"],
+            "ambient_status": noise_state["ambient_status"],
+            "ambient_label": noise_state["ambient_label"],
+            "snr_db": noise_state["snr_db"],
             "auto_adaptive": settings.adaptive_noise.enabled
         }
 
-        # 4. Stage 2: Nếu Stage 1 nghi ngờ có xung vỗ tay -> Chạy Deep Learning Classifier
+        # 4. Stage 2: Nếu Stage 1 xác nhận xung hợp lệ -> Chạy Double-Buffered ML Classifier
         now = time.time()
         if is_transient:
-            print(f"[LiveEngine] [Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f}, EnergyThresh={energy_thresh:.3f}")
+            logger.info(f"[Stage 1 Transient] Peak={peak_amp:.3f}, Crest={crest_factor:.2f}, Rise={dsp_metrics.get('rise_time_ms', 0):.1f}ms, Decay={dsp_metrics.get('decay_ratio', 0):.1f}x")
             
-            if (now - self.last_detection_time > 0.13): # Tối thiểu 130ms giữa 2 lần nhận diện để triệt tiêu hoàn toàn dội âm/echo từ cú vỗ to
-                # Trích xuất cửa sổ 250ms (4000 samples) xung quanh thời điểm phát hiện
+            if (now - self.last_detection_time > 0.13): # Anti-echo 130ms
+                t_ml_start = time.perf_counter()
+                
+                # Trích xuất cửa sổ 250ms (4000 samples)
                 clip_samples = int(self.sample_rate * settings.audio.clip_duration_sec)
                 clip = self.ring_buffer.get_recent(clip_samples)
                 
                 if len(clip) >= clip_samples // 2:
-                    # Bù âm lượng tự động (Auto-Gain Boost) cho các cú vỗ nhẹ / vỗ ở xa 3-5m trong phòng yên tĩnh
+                    # Auto-Gain Boost cho vỗ nhẹ trong phòng yên tĩnh
                     if self.noise_estimator.ambient_status == "quiet" and peak_amp < 0.08 and hf_ratio > 0.30:
                         boost_factor = min(1.8, 0.08 / max(0.02, peak_amp))
                         clip_input = np.clip(clip * boost_factor, -1.0, 1.0)
                     else:
                         clip_input = clip
 
-                    # Trích xuất đặc trưng
+                    # Trích xuất đặc trưng (Zero NaN/Inf)
                     mel_spec = self.feature_extractor.compute_mel_spectrogram(clip_input)
                     feat_vec = self.feature_extractor.compute_feature_vector(clip_input)
 
-                    # Dự đoán xác suất từ ML Classifier kèm ngưỡng động
+                    # Dự đoán từ ML Classifier
                     is_clap, confidence, clf_details = self.classifier.predict(
                         mel_spectrogram=mel_spec,
                         feature_vector=feat_vec,
@@ -194,18 +212,21 @@ class LiveDetectionEngine:
                         confidence_thresh=confidence_thresh
                     )
 
+                    t_ml = (time.perf_counter() - t_ml_start) * 1000.0
+                    system_telemetry.record_stage2_inference(t_ml, is_clap, confidence)
+
                     telemetry["confidence"] = round(confidence, 3)
                     telemetry["clf_details"] = clf_details
+                    telemetry["ml_latency_ms"] = round(t_ml, 2)
 
                     reason = clf_details.get("decision_reason", "")
-                    print(f"[LiveEngine] [Stage 2 Classifier] is_clap={is_clap}, Confidence={confidence:.2f} (Thresh={confidence_thresh:.2f}) -> {reason}")
+                    logger.info(f"[Stage 2 Classifier] is_clap={is_clap}, Conf={confidence:.2f} (Thresh={confidence_thresh:.2f}, {t_ml:.1f}ms) -> {reason}")
 
                     if is_clap:
                         self.last_detection_time = now
                         telemetry["clap_detected"] = True
-                        print(f"[LiveEngine] [CLAP CONFIRMED] Confidence={confidence:.2f} -> Registering with InstantPatternMatcher...")
+                        logger.info(f"[CLAP CONFIRMED] Confidence={confidence:.2f} -> Registering with InstantPatternMatcher...")
 
-                        # Ghi nhận vào bộ đếm nhịp vỗ tay tức thời (Instant Double-Clap)
                         self.pattern_matcher.register_clap(
                             confidence=confidence,
                             meta={
@@ -216,7 +237,6 @@ class LiveDetectionEngine:
                             }
                         )
 
-                        # Bắn sự kiện tức thì CLAP_HIT để UI phản hồi sóng âm
                         if self.broadcast_callback:
                             self.broadcast_callback({
                                 "type": "CLAP_HIT",
@@ -224,6 +244,21 @@ class LiveDetectionEngine:
                                 "timestamp": now,
                                 "metrics": dsp_metrics
                             })
+                    else:
+                        # Stage 2 từ chối: Tự động khai thác mẫu khó nếu rơi vào vùng bất định [0.40, 0.70]
+                        if 0.40 <= confidence <= 0.70:
+                            mined_id = hard_negative_miner.mine_uncertain_sample(
+                                profile_name=settings.ml.active_profile,
+                                audio_clip=clip_input,
+                                confidence=confidence,
+                                clf_details=clf_details
+                            )
+                            if mined_id:
+                                system_telemetry.record_mined_negative()
+
+        # Bổ sung telemetry sức khỏe hệ thống định kỳ (mỗi ~30 chunks = ~1 giây)
+        if self._check_counter % 30 == 0:
+            telemetry["system_health"] = system_telemetry.get_metrics()
 
         return telemetry
 

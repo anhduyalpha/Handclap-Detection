@@ -1,6 +1,6 @@
 import base64
 import json
-import threading
+import logging
 import urllib.request
 import numpy as np
 from fastapi import APIRouter, HTTPException, Response, Body
@@ -12,40 +12,43 @@ from ..core.live_engine import live_engine
 from ..training.dataset_manager import DatasetManager, CATEGORIES
 from ..training.trainer import PersonalModelTrainer
 from ..config import settings
+from ..core.executor import io_executor
+from ..core.security import sanitize_identifier
 
+logger = logging.getLogger("handclap.events")
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 dataset_mgr = DatasetManager(sample_rate=settings.audio.sample_rate)
 trainer = PersonalModelTrainer(sample_rate=settings.audio.sample_rate)
 
+def _forward_audio_worker(profile_name: str, category: str, audio_clip: np.ndarray, target_url: str):
+    try:
+        url = target_url.rstrip("/") + "/api/training/sample"
+        b64_audio = base64.b64encode(audio_clip.astype(np.float32).tobytes()).decode("ascii")
+        payload = json.dumps({
+            "profile_name": profile_name,
+            "category": category,
+            "audio_base64": b64_audio,
+            "format": "float32"
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url, 
+            data=payload, 
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            if resp.status in (200, 201):
+                logger.info(f"Audio forwarded to Windows Studio: {url}")
+            else:
+                logger.warning(f"Windows Studio returned HTTP {resp.status}")
+    except Exception as err:
+        logger.info(f"Windows Studio ({target_url}) is offline/unreachable: {err}")
+
 def _forward_audio_to_windows_async(profile_name: str, category: str, audio_clip: np.ndarray, target_url: str):
-    """Gửi bản sao âm thanh báo giả trực tiếp sang máy tính Windows (chạy nền ngầm không block)"""
-    def _worker():
-        try:
-            url = target_url.rstrip("/") + "/api/training/sample"
-            b64_audio = base64.b64encode(audio_clip.astype(np.float32).tobytes()).decode("ascii")
-            payload = json.dumps({
-                "profile_name": profile_name,
-                "category": category,
-                "audio_base64": b64_audio,
-                "format": "float32"
-            }).encode("utf-8")
-
-            req = urllib.request.Request(
-                url, 
-                data=payload, 
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
-                if resp.status in (200, 201):
-                    print(f"[ForwardToWindows] [SUCCESS] Audio forwarded to Windows Studio: {url}")
-                else:
-                    print(f"[ForwardToWindows] Warning: Windows returned HTTP {resp.status}")
-        except Exception as err:
-            print(f"[ForwardToWindows] Info: Windows Studio ({target_url}) is offline/unreachable: {err}")
-
-    threading.Thread(target=_worker, daemon=True).start()
+    """Gửi bản sao âm thanh báo giả trực tiếp sang máy tính Windows qua Bounded ThreadPool"""
+    io_executor.submit(_forward_audio_worker, profile_name, category, audio_clip, target_url)
 
 class MarkFalsePositiveRequest(BaseModel):
     event_id: str
@@ -66,7 +69,8 @@ def get_recent_triggers():
 @router.get("/audio/{event_id}")
 def get_event_audio(event_id: str):
     """Phục vụ file âm thanh WAV của sự kiện kích hoạt để nghe lại trực tiếp trên Web"""
-    wav_bytes = trigger_history.get_event_wav_bytes(event_id)
+    clean_id = sanitize_identifier(event_id, "event_id")
+    wav_bytes = trigger_history.get_event_wav_bytes(clean_id)
     if not wav_bytes:
         raise HTTPException(status_code=404, detail="Không tìm thấy file âm thanh của sự kiện này")
     
@@ -81,7 +85,11 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
     3. Tự động chuyển tiếp (Forward) đoạn âm thanh sang máy tính Windows Training Studio.
     4. Tùy chọn: Tự động kích hoạt Huấn luyện lại và Hot-Reload mô hình ngay lập tức!
     """
-    record = trigger_history.get_event_by_id(req.event_id)
+    clean_event_id = sanitize_identifier(req.event_id, "event_id")
+    clean_prof = sanitize_identifier(req.profile_name, "profile_name")
+    clean_cat = sanitize_identifier(req.category, "category")
+
+    record = trigger_history.get_event_by_id(clean_event_id)
     if not record:
         raise HTTPException(status_code=404, detail="Sự kiện không tồn tại trong bộ nhớ đệm")
 
@@ -107,9 +115,9 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
         clip_audio[:len(audio_raw)] = audio_raw
 
     # 2. Lưu vào thư mục dataset của profile trên Linux (bản sao dự phòng)
-    valid_category = req.category if req.category in CATEGORIES else "false_positives"
+    valid_category = clean_cat if clean_cat in CATEGORIES else "false_positives"
     sample_info = dataset_mgr.save_sample(
-        profile_name=req.profile_name,
+        profile_name=clean_prof,
         category=valid_category,
         audio=clip_audio
     )
@@ -117,27 +125,27 @@ def mark_false_positive(req: MarkFalsePositiveRequest):
     # 3. Tự động chuyển tiếp đoạn audio sang máy tính Windows Training Studio
     if getattr(settings, "windows_studio_url", None):
         _forward_audio_to_windows_async(
-            profile_name=req.profile_name,
+            profile_name=clean_prof,
             category=valid_category,
             audio_clip=clip_audio,
             target_url=settings.windows_studio_url
         )
 
     # 4. Xóa sự kiện này khỏi lịch sử kích hoạt trên Server
-    trigger_history.remove_event(req.event_id)
+    trigger_history.remove_event(clean_event_id)
 
     # 5. Phát sóng thông báo WebSocket để Web giao diện xóa ngay dòng sự kiện này
     if live_engine.broadcast_callback:
         live_engine.broadcast_callback({
             "type": "TRIGGER_EVENT_REMOVED",
-            "event_id": req.event_id
+            "event_id": clean_event_id
         })
 
     cat_name = CATEGORIES.get(valid_category, valid_category)
     return {
         "status": "success",
         "message": f"🎉 Đã chuyển đoạn âm thanh báo giả sang Dataset máy Windows và xóa khỏi danh sách trên Server!",
-        "event_id": req.event_id,
+        "event_id": clean_event_id,
         "sample": sample_info,
         "forwarded_to_windows": bool(getattr(settings, "windows_studio_url", None)),
         "removed_from_history": True
@@ -148,4 +156,3 @@ def clear_trigger_history():
     """Xóa sạch lịch sử kích hoạt"""
     trigger_history.clear()
     return {"status": "success", "message": "Đã xóa toàn bộ lịch sử kích hoạt"}
-

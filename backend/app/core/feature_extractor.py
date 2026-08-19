@@ -1,88 +1,102 @@
 import numpy as np
-from scipy import signal, fftpack
-from typing import Dict, Any, Tuple
+from scipy import signal
+from typing import Tuple, Dict, Any, Optional
 
 class AudioFeatureExtractor:
     """
-    Bộ trích xuất đặc trưng âm thanh thuần túy bằng NumPy & SciPy (Zero C-dependency issues).
-    Hỗ trợ:
-    - Log Mel-Spectrogram 2D (40 filterbanks x T time-steps)
-    - MFCC (Mel-Frequency Cepstral Coefficients) 1D / 2D
-    - Acoustic Statistical Vectors (Centroid, Rolloff, Contrast, Flatness, Energy Decay)
+    Trích xuất đặc trưng âm thanh tốc độ cao cho mô hình học máy (Stage 2).
+    - Log Mel-Spectrogram 2D (40 mels x 25 time steps) cho PyTorch CNN
+    - 54-dimensional Feature Vector (MFCCs, Spectral Centroid, Rolloff, Temporal Decay) cho Scikit-Learn
     """
     def __init__(
-        self, 
-        sample_rate: int = 16000, 
-        n_fft: int = 512, 
-        hop_length: int = 160, 
+        self,
+        sample_rate: int = 16000,
         n_mels: int = 40,
-        fmin: float = 100.0,
-        fmax: float = 7500.0
+        n_fft: int = 512,
+        hop_length: int = 160,
+        clip_duration_sec: float = 0.25,
+        n_mfcc: int = 20
     ):
         self.sample_rate = sample_rate
+        self.n_mels = n_mels
         self.n_fft = n_fft
         self.hop_length = hop_length
-        self.n_mels = n_mels
-        self.fmin = fmin
-        self.fmax = fmax if fmax else sample_rate / 2.0
+        self.clip_duration_sec = clip_duration_sec
+        self.target_samples = int(sample_rate * clip_duration_sec)  # 4000 samples @ 16kHz
+        self.n_mfcc = n_mfcc
         
-        # Tạo ma trận Mel Filterbank
-        self.mel_basis = self._create_mel_filterbank()
-        self.dct_basis = self._create_dct_basis(n_mels, 20)
+        # Tiền tính toán Mel Filterbank Matrix để tăng tốc tối đa
+        self.mel_basis = self._create_mel_filterbank(
+            sr=sample_rate, 
+            n_fft=n_fft, 
+            n_mels=n_mels, 
+            fmin=200.0, 
+            fmax=sample_rate / 2.0
+        )
+        
+        # Tiền tính toán DCT matrix cho MFCCs
+        self.dct_basis = self._create_dct_matrix(n_mfcc=self.n_mfcc, n_mels=self.n_mels)
 
-    def _hz_to_mel(self, hz: np.ndarray) -> np.ndarray:
+    def _hz_to_mel(self, hz: float) -> float:
         return 2595.0 * np.log10(1.0 + hz / 700.0)
 
-    def _mel_to_hz(self, mel: np.ndarray) -> np.ndarray:
+    def _mel_to_hz(self, mel: float) -> float:
         return 700.0 * (10.0 ** (mel / 2595.0) - 1.0)
 
-    def _create_mel_filterbank(self) -> np.ndarray:
-        """Tạo ma trận bộ lọc Mel tam giác"""
-        num_fft_bins = self.n_fft // 2 + 1
-        mel_min = self._hz_to_mel(np.array(self.fmin))
-        mel_max = self._hz_to_mel(np.array(self.fmax))
-        
-        mel_points = np.linspace(mel_min, mel_max, self.n_mels + 2)
+    def _create_mel_filterbank(self, sr: int, n_fft: int, n_mels: int, fmin: float, fmax: float) -> np.ndarray:
+        """Tạo ma trận Mel filterbank chuẩn hoá không cần cài librosa"""
+        min_mel = self._hz_to_mel(fmin)
+        max_mel = self._hz_to_mel(fmax)
+        mel_points = np.linspace(min_mel, max_mel, n_mels + 2)
         hz_points = self._mel_to_hz(mel_points)
-        bin_points = np.floor((self.n_fft + 1) * hz_points / self.sample_rate).astype(int)
-        
-        filterbank = np.zeros((self.n_mels, num_fft_bins))
-        for i in range(1, self.n_mels + 1):
+        bin_points = np.floor((n_fft + 1) * hz_points / sr).astype(int)
+
+        num_fft_bins = n_fft // 2 + 1
+        filterbank = np.zeros((n_mels, num_fft_bins), dtype=np.float32)
+
+        for i in range(1, n_mels + 1):
             left = bin_points[i - 1]
             center = bin_points[i]
             right = bin_points[i + 1]
-            
+
             for j in range(left, center):
-                if center != left:
+                if center > left and j < num_fft_bins:
                     filterbank[i - 1, j] = (j - left) / (center - left)
             for j in range(center, right):
-                if right != center:
+                if right > center and j < num_fft_bins:
                     filterbank[i - 1, j] = (right - j) / (right - center)
-                    
+
+        # Slaney-style area normalization
+        enorm = 2.0 / (hz_points[2:n_mels + 2] - hz_points[:n_mels])
+        filterbank *= enorm[:, np.newaxis]
         return filterbank
 
-    def _create_dct_basis(self, n_input: int, n_mfcc: int) -> np.ndarray:
-        """Tạo ma trận biến đổi DCT loại 2 để tính MFCC"""
-        n = np.arange(n_input)
-        k = np.arange(n_mfcc)[:, np.newaxis]
-        dct_matrix = np.cos(np.pi * (n + 0.5) * k / n_input)
-        return dct_matrix
+    def _create_dct_matrix(self, n_mfcc: int, n_mels: int) -> np.ndarray:
+        """Tạo ma trận Discrete Cosine Transform (DCT Type-II)"""
+        basis = np.empty((n_mfcc, n_mels), dtype=np.float32)
+        basis[0, :] = 1.0 / np.sqrt(n_mels)
+        samples = np.arange(1, 2 * n_mels, 2) * np.pi / (2.0 * n_mels)
+        for i in range(1, n_mfcc):
+            basis[i, :] = np.cos(i * samples) * np.sqrt(2.0 / n_mels)
+        return basis
 
-    def align_and_pad(self, audio: np.ndarray, target_length: int = 4000) -> np.ndarray:
+    def align_and_pad(self, audio: np.ndarray) -> np.ndarray:
         """
-        Căn chỉnh mẫu âm thanh (250ms @ 16kHz = 4000 samples)
-        Tìm đỉnh xung và đặt ở vị trí ~20% đầu đoạn để giữ trọn vẹn phần Attack & Decay.
+        Căn chỉnh đỉnh âm thanh (Transient Peak) vào vị trí 15% (khoảng 35ms-40ms đầu),
+        pad hoặc cắt vừa đúng target_samples (250ms = 4000 samples).
         """
+        target_length = self.target_samples
         if len(audio) == 0:
             return np.zeros(target_length, dtype=np.float32)
-            
+
+        # Tìm vị trí đỉnh năng lượng cao nhất
         peak_idx = int(np.argmax(np.abs(audio)))
-        pre_peak = int(target_length * 0.20)  # 50ms trước đỉnh
-        post_peak = target_length - pre_peak # 200ms sau đỉnh
         
-        start_idx = peak_idx - pre_peak
-        end_idx = peak_idx + post_peak
-        
+        # Đặt đỉnh tại vị trí 15% của cửa sổ
+        target_peak_pos = int(target_length * 0.15)
+        start_idx = peak_idx - target_peak_pos
+        end_idx = start_idx + target_length
+
         aligned = np.zeros(target_length, dtype=np.float32)
         
         src_start = max(0, start_idx)
@@ -95,7 +109,7 @@ class AudioFeatureExtractor:
             aligned[dest_start:dest_end] = audio[src_start:src_end]
             
         # Chuẩn hóa biên độ (Peak Normalization an toàn)
-        max_val = np.max(np.abs(aligned))
+        max_val = float(np.max(np.abs(aligned))) if len(aligned) > 0 else 0.0
         if max_val > 1e-4:
             aligned = aligned / max_val
             
@@ -103,7 +117,7 @@ class AudioFeatureExtractor:
 
     def compute_mel_spectrogram(self, audio: np.ndarray) -> np.ndarray:
         """
-        Tính Log Mel-Spectrogram (Shape: [n_mels, time_frames])
+        Tính Log Mel-Spectrogram (Shape: [n_mels, time_frames]) với bảo vệ chống NaN/Inf.
         """
         audio = self.align_and_pad(audio)
         
@@ -127,8 +141,15 @@ class AudioFeatureExtractor:
         # Log Scale (dB)
         log_mel_spec = 10.0 * np.log10(np.maximum(mel_spec, 1e-10))
         
-        # Normalize về dải [-1.0, 1.0] hoặc [0.0, 1.0]
-        log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (np.std(log_mel_spec) + 1e-6)
+        # Normalize về dải chuẩn hoá
+        std_val = float(np.std(log_mel_spec))
+        mean_val = float(np.mean(log_mel_spec))
+        if std_val < 1e-5:
+            log_mel_spec = log_mel_spec - mean_val
+        else:
+            log_mel_spec = (log_mel_spec - mean_val) / (std_val + 1e-6)
+
+        log_mel_spec = np.nan_to_num(log_mel_spec, nan=0.0, posinf=1.0, neginf=-1.0)
         return log_mel_spec.astype(np.float32)
 
     def compute_feature_vector(self, audio: np.ndarray) -> np.ndarray:
@@ -137,7 +158,7 @@ class AudioFeatureExtractor:
         - Mean & Std MFCCs (40 giá trị)
         - Spectral Centroid, Bandwidth, Flatness, Rolloff (8 giá trị)
         - Temporal Energy Envelope Decay Stats (6 giá trị)
-        -> Tổng: 54 chiều, lý tưởng cho LightGBM / Random Forest / MLP cực nhanh
+        -> Tổng: 54 chiều, bảo vệ chống NaN/Inf.
         """
         aligned = self.align_and_pad(audio)
         mel_spec = self.compute_mel_spectrogram(aligned)
@@ -161,27 +182,27 @@ class AudioFeatureExtractor:
         
         # Spectral Centroid
         centroid = np.sum(freqs[:, np.newaxis] * magnitude, axis=0) / (np.sum(magnitude, axis=0) + 1e-8)
-        centroid_mean = np.mean(centroid)
-        centroid_std = np.std(centroid)
+        centroid_mean = float(np.mean(centroid))
+        centroid_std = float(np.std(centroid))
         
         # Spectral Rolloff (85% energy)
         cumsum = np.cumsum(magnitude, axis=0)
         total_energy = cumsum[-1, :]
         rolloff_idx = np.argmax(cumsum >= 0.85 * total_energy[np.newaxis, :], axis=0)
         rolloff = freqs[rolloff_idx]
-        rolloff_mean = np.mean(rolloff)
-        rolloff_std = np.std(rolloff)
+        rolloff_mean = float(np.mean(rolloff))
+        rolloff_std = float(np.std(rolloff))
         
         # 3. Temporal Envelope Decay
-        # Tiếng vỗ tay có decay rate cực nhanh trong 100ms đầu
         sub_windows = np.array_split(np.abs(aligned), 6)
         sub_energies = [float(np.sqrt(np.mean(w**2) + 1e-10)) for w in sub_windows]
         
         feature_vector = np.concatenate([
             mfcc_mean,           # 20
             mfcc_std,            # 20
-            [centroid_mean, centroid_std, rolloff_mean, rolloff_std], # 4
+            [centroid_mean, centroid_std, rolloff_mean, rolloff_std],  # 4
             sub_energies         # 6
         ]).astype(np.float32)
         
+        feature_vector = np.nan_to_num(feature_vector, nan=0.0, posinf=1.0, neginf=-1.0)
         return feature_vector

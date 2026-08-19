@@ -1,41 +1,21 @@
 {
-  "server_hostname": "dellhomesever",
-  "username": "anhduy",
-  "os": "Ubuntu 24.04.4 LTS (Noble Numbat)",
-  "kernel": "Linux 6.8.0-138-generic x86_64",
+  "server_hostname": "linux-audio-server",
+  "os": "Ubuntu 24.04 LTS",
   "cpu": {
-    "model": "Intel(R) Core(TM) i3-7100U CPU @ 2.40GHz",
-    "cores": 2,
-    "threads": 4,
-    "architecture": "x86_64"
-  },
-  "memory": {
-    "total_ram_gb": 3.7,
-    "available_ram_gb": 2.0,
-    "swap_gb": 1.8
-  },
-  "storage": {
-    "root_size_gb": 915,
-    "available_gb": 654
+    "architecture": "x86_64",
+    "recommended_threads": 4
   },
   "audio_hardware": {
-    "soundcard": "HDA Intel PCH (Sunrise Point-LP)",
-    "capture_device": "card 0: PCH, device 0: ALC3246 Analog [ALC3246 Analog]",
-    "codec": "Realtek ALC3246",
-    "driver_config": "options snd-intel-dspcfg dsp_driver=1"
+    "recommended_driver": "ALSA Analog",
+    "sample_rate": 16000,
+    "channels": 1
   },
   "runtime_environment": {
-    "python_version": "3.12.3",
-    "node_version": "v20.20.2",
-    "npm_version": "10.8.2",
-    "virtual_env_path": "/home/anhduy/HandClap-Detection/.venv"
+    "python_version": "3.10+",
+    "node_version": "v18+"
   },
   "network": {
-    "lan_ip": "192.168.2.171",
-    "tailscale_ip": "100.90.62.15",
-    "ports": {
-      "backend_api": 8000,
-      "frontend_web": 5173
-    }
+    "default_backend_port": 8000,
+    "default_frontend_port": 5173
   }
 }

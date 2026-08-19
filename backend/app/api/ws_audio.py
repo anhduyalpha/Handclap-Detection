@@ -1,61 +1,96 @@
 import json
 import asyncio
+import threading
+import logging
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Set
+from typing import Set, List, Optional
 from ..core.live_engine import live_engine
 from ..smart_home.virtual_bulb import virtual_bulb
 
+logger = logging.getLogger("handclap.websocket")
 router = APIRouter()
 
-class ConnectionManager:
-    """Quản lý các kết nối WebSocket đang mở giữa Web Client và Backend"""
+class ThreadSafeConnectionManager:
+    """
+    Quản lý các kết nối WebSocket đang mở giữa Web Client và Backend
+    Bảo đảm an toàn luồng (Thread-Safe) giữa Thread xử lý DSP và Asyncio Event Loop.
+    """
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
-        self.loop = None
+        self.lock = threading.Lock()
+        self.main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        """Gắn Event Loop chính của FastAPI khi khởi động server"""
+        self.main_loop = loop
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.add(websocket)
-        self.loop = asyncio.get_event_loop()
+        with self.lock:
+            self.active_connections.add(websocket)
+        
+        # Nếu chưa set loop, tự động bắt loop hiện tại
+        if self.main_loop is None:
+            try:
+                self.main_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
         
         # Gửi trạng thái ban đầu của đèn và cài đặt cho client vừa kết nối
-        await websocket.send_json({
-            "type": "INITIAL_STATE",
-            "bulb_state": virtual_bulb.get_state()
-        })
+        try:
+            await websocket.send_json({
+                "type": "INITIAL_STATE",
+                "bulb_state": virtual_bulb.get_state()
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send initial state to new connection: {e}")
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
+        with self.lock:
+            self.active_connections.discard(websocket)
 
     def broadcast_json_sync(self, message: dict):
-        """Hàm đồng bộ được gọi từ các thread xử lý DSP để bắn tin nhắn tới tất cả WebSocket"""
-        if not self.active_connections:
-            return
-            
-        coro = self._broadcast(message)
-        try:
-            # Nếu đang có event loop đang chạy
-            if self.loop and self.loop.is_running():
-                asyncio.run_coroutine_threadsafe(coro, self.loop)
-            else:
-                asyncio.run(coro)
-        except Exception as e:
-            # Bỏ qua nếu loop đang tắt
+        """
+        Hàm đồng bộ an toàn luồng được gọi từ các thread xử lý DSP hoặc ActionDispatcher
+        để gửi tin nhắn tới tất cả WebSocket client mà không làm crash event loop.
+        """
+        with self.lock:
+            if not self.active_connections:
+                return
+            targets = list(self.active_connections)
+
+        # Sử dụng main_loop đã đăng ký
+        loop = self.main_loop
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+        if loop and loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(self._broadcast_to(targets, message), loop)
+            except Exception as e:
+                logger.debug(f"Broadcast threadsafe scheduling error: {e}")
+        else:
+            # Fallback nếu không có loop chạy
             pass
 
-    async def _broadcast(self, message: dict):
+    async def _broadcast_to(self, targets: List[WebSocket], message: dict):
         dead_connections = []
-        for connection in list(self.active_connections):
+        for connection in targets:
             try:
                 await connection.send_json(message)
             except Exception:
                 dead_connections.append(connection)
                 
-        for dc in dead_connections:
-            self.active_connections.discard(dc)
+        if dead_connections:
+            with self.lock:
+                for dc in dead_connections:
+                    self.active_connections.discard(dc)
 
-manager = ConnectionManager()
+manager = ThreadSafeConnectionManager()
 
 # Đăng ký broadcast callback vào live engine
 live_engine.set_broadcast_callback(manager.broadcast_json_sync)
@@ -84,7 +119,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     if telemetry_counter % 3 == 0:
                         await websocket.send_json(telemetry)
                 except Exception as proc_err:
-                    print(f"[WebSocket] Error processing audio chunk: {proc_err}")
+                    logger.error(f"Error processing audio chunk: {proc_err}")
 
             elif "text" in message and message["text"] is not None:
                 # Xử lý các lệnh điều khiển từ UI (JSON)
@@ -117,10 +152,10 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         })
 
                 except Exception as e:
-                    print(f"[WebSocket] Error parsing text message: {e}")
+                    logger.warning(f"Error parsing text message: {e}")
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        print(f"[WebSocket] Disconnected with error: {e}")
+        logger.debug(f"WebSocket client disconnected: {e}")
         manager.disconnect(websocket)

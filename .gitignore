@@ -45,6 +45,7 @@ yarn-error.log*
 # IDE & Editor Configs
 .idea/
 .vscode/
+.agent/
 *.swp
 *.swo
 *~

@@ -14,6 +14,7 @@ import './styles/main.css';
 import './styles/training_studio.css';
 import confetti from 'canvas-confetti';
 import { TriggerHistoryWidget } from './components/TriggerHistoryWidget.js';
+import { escapeHtml } from './utils/sanitize.js';
 
 const CATEGORY_NAMES = {
   claps: '👏 Vỗ Tay',
@@ -629,14 +630,19 @@ class TrainingStudioApp {
         const row = document.createElement('div');
         row.className = 'sample-row';
         const catTitle = CATEGORY_NAMES[item.cat] || item.cat;
+        const safeCat = escapeHtml(item.cat);
+        const safeTitle = escapeHtml(catTitle);
+        const safeFilename = escapeHtml(item.filename || 'Sample');
+        const safeUrl = escapeHtml(item.url || '#');
+
         row.innerHTML = `
           <div class="sample-info">
-            <span class="sample-pill pill-${item.cat}">${catTitle}</span>
-            <span style="font-size: 0.85rem; font-weight: 500;">${item.filename || 'Sample'}</span>
+            <span class="sample-pill pill-${safeCat}">${safeTitle}</span>
+            <span style="font-size: 0.85rem; font-weight: 500;">${safeFilename}</span>
           </div>
           <div style="display: flex; gap: 0.4rem;">
-            <button class="btn btn-secondary btn-sm btn-play-sample" data-url="${item.url || '#'}" title="Nghe lại">▶</button>
-            <button class="btn btn-secondary btn-sm btn-delete-sample" data-name="${item.filename}" data-cat="${item.cat}" title="Xóa" style="color: #ef4444;">✕</button>
+            <button class="btn btn-secondary btn-sm btn-play-sample" data-url="${safeUrl}" title="Nghe lại">▶</button>
+            <button class="btn btn-secondary btn-sm btn-delete-sample" data-name="${safeFilename}" data-cat="${safeCat}" title="Xóa" style="color: #ef4444;">✕</button>
           </div>
         `;
         container.appendChild(row);

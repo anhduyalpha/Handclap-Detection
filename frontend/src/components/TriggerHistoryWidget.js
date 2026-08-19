@@ -5,6 +5,7 @@
  */
 import { ApiClient } from '../services/api_client.js';
 import { wsClient } from '../services/websocket_client.js';
+import { escapeHtml } from '../utils/sanitize.js';
 
 const CATEGORY_MAP = {
   false_positives: '🚫 Mẫu Báo Giả',
@@ -76,7 +77,7 @@ export class TriggerHistoryWidget {
       gap: 12px;
       animation: slideInUp 0.3s ease;
     `;
-    const acc = data?.metrics?.accuracy ? ` (Độ chính xác: ${data.metrics.accuracy}%)` : '';
+    const acc = data?.metrics?.accuracy ? ` (Độ chính xác: ${escapeHtml(data.metrics.accuracy)}%)` : '';
     toast.innerHTML = `
       <span style="font-size: 1.4rem;">🚀</span>
       <div>
@@ -218,28 +219,33 @@ export class TriggerHistoryWidget {
     this.events.forEach((ev) => {
       const row = document.createElement('div');
       row.className = `trigger-event-row ${ev.is_false_positive ? 'marked-fp' : ''}`;
-      row.setAttribute('data-id', ev.id);
+      row.setAttribute('data-id', escapeHtml(ev.id));
 
       const patternLabel = ev.pattern === 'double' ? '👏👏 2 Vỗ (Double)' : '👏 Vỗ Tay';
       const confPct = Math.round((ev.confidence || 0.8) * 100);
+      const safeTime = escapeHtml(ev.datetime_str || 'Vừa xong');
+      const safePattern = escapeHtml(ev.pattern || 'double');
+      const safeAudioUrl = escapeHtml(ev.audio_url || '#');
+      const safeCategoryName = escapeHtml(CATEGORY_MAP[ev.marked_category] || ev.marked_category || 'Nhiễu');
+      const safeId = escapeHtml(ev.id);
 
       row.innerHTML = `
         <div class="event-left">
-          <div class="event-time">${ev.datetime_str || 'Vừa xong'}</div>
+          <div class="event-time">${safeTime}</div>
           <div class="event-meta">
-            <span class="event-pill pill-${ev.pattern}">${patternLabel}</span>
+            <span class="event-pill pill-${safePattern}">${patternLabel}</span>
             <span class="event-conf">Độ tin cậy: <strong>${confPct}%</strong></span>
           </div>
         </div>
 
         <div class="event-actions">
-          <button class="btn btn-secondary btn-sm btn-play-trigger" data-url="${ev.audio_url || '#'}" title="Nghe lại âm thanh gây kích hoạt">
+          <button class="btn btn-secondary btn-sm btn-play-trigger" data-url="${safeAudioUrl}" title="Nghe lại âm thanh gây kích hoạt">
             ▶ Nghe lại
           </button>
 
           ${ev.is_false_positive 
-            ? `<span class="fp-status-badge">✅ Đã học: ${CATEGORY_MAP[ev.marked_category] || ev.marked_category}</span>`
-            : `<button class="btn btn-danger-outline btn-sm btn-mark-fp" data-id="${ev.id}">
+            ? `<span class="fp-status-badge">✅ Đã học: ${safeCategoryName}</span>`
+            : `<button class="btn btn-danger-outline btn-sm btn-mark-fp" data-id="${safeId}">
                  🚫 Báo Giả
                </button>`
           }

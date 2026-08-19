@@ -9,6 +9,7 @@ import time
 import os
 import signal
 import shutil
+import urllib.request
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -37,6 +38,27 @@ def find_npm_executable() -> str:
         return shutil.which("npm.cmd") or "npm.cmd"
     return shutil.which("npm") or "npm"
 
+def wait_for_backend_ready(backend_proc, timeout_sec: float = 25.0) -> bool:
+    """Chờ cho đến khi Backend FastAPI thực sự mở port 8000 và phản hồi /api/health"""
+    print("[*] Đang chờ Backend khởi tạo mô hình AI & mở cổng 8000...")
+    start_t = time.time()
+    while time.time() - start_t < timeout_sec:
+        if backend_proc.poll() is not None:
+            print(f"\n[!] LỖI: Backend Server đã dừng đột ngột (Exit code: {backend_proc.returncode}).")
+            return False
+        try:
+            req = urllib.request.Request("http://127.0.0.1:8000/api/health", headers={"User-Agent": "HandClapLauncher"})
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    print(f"[+] Backend đã sẵn sàng và đang lắng nghe tại http://127.0.0.1:8000 ({time.time() - start_t:.1f}s)")
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    print(f"\n[!] CẢNH BÁO: Backend chưa phản hồi sau {timeout_sec}s, tiếp tục bật Frontend...")
+    return True
+
 def main():
     print("==================================================================")
     print("  👏 HANDCLAP DETECTION & SMART LIGHT WEB APP")
@@ -59,6 +81,13 @@ def main():
         cwd=str(BACKEND_DIR)
     )
 
+    # Chờ Backend mở cổng 8000 trước khi bật Frontend
+    is_ready = wait_for_backend_ready(backend_proc, timeout_sec=25.0)
+    if not is_ready:
+        print("[!] Hãy thử chạy trực tiếp lệnh sau để kiểm tra lỗi thư viện:")
+        print(f"    source .venv/bin/activate && python3 backend/run_server.py\n")
+        sys.exit(1)
+
     # 2. Khởi động Frontend
     print("[*] Starting Frontend Vite Dev Server...")
     frontend_proc = subprocess.Popen(
@@ -77,7 +106,6 @@ def main():
             if frontend_proc.poll() is None:
                 frontend_proc.terminate()
                 
-            # Đợi tối đa 2s để các tiến trình dừng êm dịu
             time.sleep(0.5)
             if backend_proc.poll() is None:
                 backend_proc.kill()
@@ -96,7 +124,6 @@ def main():
 
     try:
         while True:
-            # Kiểm tra nếu 1 trong 2 tiến trình bị chết đột ngột
             if backend_proc.poll() is not None:
                 print("[!] Backend server đã dừng (Exit code:", backend_proc.returncode, ")")
                 break
@@ -111,4 +138,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

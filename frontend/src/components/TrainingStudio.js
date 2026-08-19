@@ -4,6 +4,7 @@
 import { audioStreamManager } from '../services/audio_recorder.js';
 import { ApiClient } from '../services/api_client.js';
 import confetti from 'canvas-confetti';
+import { escapeHtml } from '../utils/sanitize.js';
 
 const CATEGORIES_LIST = [
   { id: 'claps', label: '👏 Tiếng Vỗ Tay', hint: 'Vỗ tay tự do: vỗ nhẹ, vỗ mạnh, ở xa 2-3m, vỗ nhanh' },
@@ -199,28 +200,37 @@ export class TrainingStudio {
       return;
     }
 
-    grid.innerHTML = this.samples.map((s) => `
-      <div class="sample-card-item" id="card-${s.sample_id}">
-        <div class="sample-card-top">
-          <span class="sample-card-id" title="${s.sample_id}">${s.sample_id}</span>
-          <button class="sample-play-btn" data-wav="${s.wav_url}" title="Bấm để nghe lại">
-            ▶
-          </button>
-        </div>
+    grid.innerHTML = this.samples.map((s) => {
+      const safeId = escapeHtml(s.sample_id);
+      const safeCat = escapeHtml(s.category);
+      const safeWavUrl = escapeHtml(s.wav_url || '#');
+      const safePeak = escapeHtml(s.peak_amp);
+      const safeRms = escapeHtml(s.rms_amp);
+      const safeCreated = escapeHtml(s.created_at || '');
 
-        <div class="sample-card-meta">
-          <span>Peak: <strong>${s.peak_amp}</strong></span>
-          <span>RMS: <strong>${s.rms_amp}</strong></span>
-          <span>${s.created_at || ''}</span>
-        </div>
+      return `
+        <div class="sample-card-item" id="card-${safeId}">
+          <div class="sample-card-top">
+            <span class="sample-card-id" title="${safeId}">${safeId}</span>
+            <button class="sample-play-btn" data-wav="${safeWavUrl}" title="Bấm để nghe lại">
+              ▶
+            </button>
+          </div>
 
-        <div style="display: flex; justify-content: flex-end; margin-top: 0.2rem;">
-          <button class="sample-delete-btn" data-id="${s.sample_id}" data-cat="${s.category}" title="Xoá mẫu này">
-            🗑️ Xoá
-          </button>
+          <div class="sample-card-meta">
+            <span>Peak: <strong>${safePeak}</strong></span>
+            <span>RMS: <strong>${safeRms}</strong></span>
+            <span>${safeCreated}</span>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: 0.2rem;">
+            <button class="sample-delete-btn" data-id="${safeId}" data-cat="${safeCat}" title="Xoá mẫu này">
+              🗑️ Xoá
+            </button>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     // Attach play & delete listeners
     grid.querySelectorAll('.sample-play-btn').forEach((btn) => {
@@ -352,11 +362,15 @@ export class TrainingStudio {
     const select = this.container.querySelector('#studio-profile-select');
     if (!select) return;
 
-    select.innerHTML = this.profiles.map((p) => `
-      <option value="${p.name}" ${p.name === this.activeProfile ? 'selected' : ''}>
-        ${p.name} (${p.claps_count} claps, ${p.noises_count} noise)
-      </option>
-    `).join('') + `<option value="__new__">+ Tạo Profile Mới...</option>`;
+    select.innerHTML = this.profiles.map((p) => {
+      const safeName = escapeHtml(p.name);
+      const isSel = p.name === this.activeProfile ? 'selected' : '';
+      return `
+        <option value="${safeName}" ${isSel}>
+          ${safeName} (${p.claps_count} claps, ${p.noises_count} noise)
+        </option>
+      `;
+    }).join('') + `<option value="__new__">+ Tạo Profile Mới...</option>`;
   }
 
   updateCategoryTabs() {
