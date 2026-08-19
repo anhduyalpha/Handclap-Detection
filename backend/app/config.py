@@ -29,48 +29,48 @@ class AudioConfig(BaseModel):
     n_mfcc: int = 20
 
 class DSPConfig(BaseModel):
-    # Stage 1: Transient & Peak detection
-    energy_threshold: float = 0.025   # Ngưỡng biên độ đỉnh tối thiểu
-    crest_factor_min: float = 2.4     # Tỉ lệ đỉnh / RMS (loại trừ tiếng nói, quạt, nhạc)
-    hf_energy_ratio_min: float = 0.22 # Tỉ lệ năng lượng tần số cao (>1500Hz)
-    min_silence_before_ms: float = 30.0 # Khoảng lặng trước khi có xung
+    # Stage 1: Transient & Peak detection (Được tinh chỉnh siêu nhạy cho Micro Laptop ở khoảng cách 2-4m)
+    energy_threshold: float = 0.015   # Ngưỡng biên độ đỉnh tối thiểu (nhạy với tiếng vỗ xa)
+    crest_factor_min: float = 1.8     # Tỉ lệ đỉnh / RMS
+    hf_energy_ratio_min: float = 0.15 # Tỉ lệ năng lượng tần số cao (>1500Hz)
+    min_silence_before_ms: float = 20.0 # Khoảng lặng trước khi có xung
 
 class MLConfig(BaseModel):
-    # Stage 2: AI Classifier (Độ chính xác cao chống báo giả)
-    confidence_threshold: float = 0.75 # Ngưỡng xác nhận AI (0.75 = 75%)
+    # Stage 2: AI Classifier (Độ nhạy cân bằng tối ưu)
+    confidence_threshold: float = 0.58 # Ngưỡng xác nhận AI (0.58 = 58%)
     model_type: str = "hybrid_ensemble"  # "cnn" | "random_forest" | "hybrid_ensemble"
     active_profile: str = "default"
 
 class SensitivityPresets:
     PRESETS = {
         "high_sensitivity": {
-            "name": "Nhạy Cao (Vỗ nhẹ / Ở xa 2-3m)",
-            "energy_threshold": 0.020,
-            "crest_factor_min": 2.2,
-            "confidence_threshold": 0.68,
-            "hf_energy_ratio_min": 0.24
+            "name": "Siêu Nhạy (Vỗ nhẹ / Ở xa 3-5m)",
+            "energy_threshold": 0.012,
+            "crest_factor_min": 1.6,
+            "confidence_threshold": 0.50,
+            "hf_energy_ratio_min": 0.14
         },
         "balanced": {
-            "name": "Cân Bằng (Phòng tiêu chuẩn)",
-            "energy_threshold": 0.028,
-            "crest_factor_min": 2.5,
-            "confidence_threshold": 0.75,
-            "hf_energy_ratio_min": 0.28
+            "name": "Cân Bằng (Phòng tiêu chuẩn 2-3m)",
+            "energy_threshold": 0.018,
+            "crest_factor_min": 1.9,
+            "confidence_threshold": 0.58,
+            "hf_energy_ratio_min": 0.18
         },
         "strict_anti_noise": {
             "name": "Chống Nhiễu Cao (Phòng nhiều tạp âm)",
-            "energy_threshold": 0.055,
-            "crest_factor_min": 3.2,
-            "confidence_threshold": 0.85,
-            "hf_energy_ratio_min": 0.35
+            "energy_threshold": 0.040,
+            "crest_factor_min": 2.8,
+            "confidence_threshold": 0.75,
+            "hf_energy_ratio_min": 0.28
         }
     }
 
 class PatternConfig(BaseModel):
     # Nhận diện chuỗi 2 tiếng vỗ tay tức thời (Instant Double Clap)
-    min_inter_clap_ms: int = 140       # Khoảng cách tối thiểu giữa 2 cú vỗ (chống dội âm từ tiếng vỗ to)
-    max_inter_clap_ms: int = 500       # Cửa sổ tối đa cho phép giữa cú vỗ 1 và 2 (500ms)
-    cooldown_ms: int = 400             # Thời gian nghỉ sau khi thực thi hành động (chống dội lệnh)
+    min_inter_clap_ms: int = 110       # Khoảng cách tối thiểu giữa 2 cú vỗ (chống dội âm)
+    max_inter_clap_ms: int = 750       # Cửa sổ tối đa giữa 2 cú vỗ (750ms cho phép vỗ tự nhiên không vội)
+    cooldown_ms: int = 350             # Thời gian nghỉ sau khi thực thi hành động
 
 class SmartLightConfig(BaseModel):
     power: bool = True
@@ -84,10 +84,10 @@ class SmartLightConfig(BaseModel):
 class AdaptiveNoiseConfig(BaseModel):
     enabled: bool = True                  # Bật/tắt tự động căn chỉnh độ ồn nền liên tục
     adaptation_speed: float = 0.05        # Tốc độ cập nhật EMA (alpha)
-    margin_factor: float = 1.6            # Hệ số nhân biên an toàn trên đỉnh nhiễu nền
-    min_energy_threshold: float = 0.016   # Ngưỡng tối thiểu khi phòng cực kỳ yên tĩnh
-    max_energy_threshold: float = 0.120   # Ngưỡng tối đa cho phép khi phòng quá ồn
-    transient_rejection_ratio: float = 2.2 # Tỉ lệ peak/noise_floor để loại bỏ không đưa vào học
+    margin_factor: float = 1.25           # Hệ số nhân biên an toàn (giảm để nhạy hơn)
+    min_energy_threshold: float = 0.012   # Ngưỡng tối thiểu khi phòng yên tĩnh
+    max_energy_threshold: float = 0.075   # Ngưỡng tối đa khi phòng ồn
+    transient_rejection_ratio: float = 2.4 # Tỉ lệ peak/noise_floor để loại bỏ
 
 class AppSettings(BaseModel):
     audio: AudioConfig = AudioConfig()

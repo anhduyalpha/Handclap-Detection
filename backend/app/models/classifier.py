@@ -189,15 +189,15 @@ class ClapClassifier:
     def _fallback_rule_score(self, dsp_metrics: Optional[Dict[str, Any]]) -> float:
         """Đánh giá xác suất dựa trên DSP metrics khi khởi động lần đầu chưa train model"""
         if not dsp_metrics:
-            return 0.5
+            return 0.65
             
-        score = 0.0
-        if dsp_metrics.get("crest_factor", 0) > 4.0:
-            score += 0.3
-        if dsp_metrics.get("hf_ratio", 0) > 0.40:
-            score += 0.35
-        if dsp_metrics.get("onset_ratio", 0) > 2.5:
+        score = 0.20
+        if dsp_metrics.get("crest_factor", 0) > 1.8:
             score += 0.25
-        if dsp_metrics.get("peak_amp", 0) > 0.08:
-            score += 0.1
+        if dsp_metrics.get("hf_ratio", 0) > 0.16:
+            score += 0.30
+        if dsp_metrics.get("onset_ratio", 0) > 1.4:
+            score += 0.20
+        if dsp_metrics.get("peak_amp", 0) > 0.02:
+            score += 0.15
         return min(1.0, score)

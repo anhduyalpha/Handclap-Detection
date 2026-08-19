@@ -285,14 +285,42 @@ class DatasetManager:
 
         np.random.seed(42)
 
-        # 1. 20 Mẫu Vỗ Tay Mô Phỏng (Synthetic Claps)
-        for i in range(20):
-            center_freq = np.random.uniform(2000, 5000)
-            decay_rate = np.random.uniform(25, 45)  # ms
-            envelope = np.exp(-t * (1000.0 / decay_rate))
-            noise = np.random.normal(0, 1, len(t))
-            resonance = np.sin(2 * np.pi * center_freq * t) + 0.4 * np.sin(2 * np.pi * (center_freq * 1.5) * t)
-            clap_sample = (noise * 0.75 + resonance * 0.25) * envelope
+        # 1. 40 Mẫu Vỗ Tay Đa Dạng Âm Học (Flat Palm, Cupped, Soft, Reverberant Room Claps)
+        for i in range(40):
+            clap_type = i % 4
+            if clap_type == 0:
+                # Flat Palm Clap: Tiếng đốp đanh, tần số cao 2.8kHz - 6kHz
+                center_freq = np.random.uniform(2800, 5800)
+                decay_rate = np.random.uniform(12, 35) # ms
+                envelope = np.exp(-t * (1000.0 / decay_rate))
+                noise = np.random.normal(0, 1, len(t))
+                res = np.sin(2 * np.pi * center_freq * t) + 0.3 * np.sin(2 * np.pi * (center_freq * 1.4) * t)
+                clap_sample = (noise * 0.80 + res * 0.20) * envelope
+            elif clap_type == 1:
+                # Cupped Hand Clap: Vỗ khum tay, âm trầm rỗng 1.2kHz - 2.4kHz
+                center_freq = np.random.uniform(1200, 2400)
+                decay_rate = np.random.uniform(20, 48) # ms
+                envelope = np.exp(-t * (1000.0 / decay_rate))
+                noise = np.random.normal(0, 0.8, len(t))
+                cavity = np.sin(2 * np.pi * center_freq * t) + 0.5 * np.sin(2 * np.pi * (center_freq * 0.7) * t)
+                clap_sample = (noise * 0.55 + cavity * 0.45) * envelope
+            elif clap_type == 2:
+                # Soft / Far-Field Clap: Tiếng vỗ nhẹ từ xa 3-5m (kèm dội âm nhẹ của phòng)
+                center_freq = np.random.uniform(1800, 4200)
+                decay_rate = np.random.uniform(15, 40)
+                env = np.exp(-t * (1000.0 / decay_rate))
+                echo = 0.25 * np.roll(env, int(sr * 0.04)) # dội âm 40ms
+                noise = np.random.normal(0, 1, len(t))
+                res = np.sin(2 * np.pi * center_freq * t)
+                clap_sample = (noise * 0.70 + res * 0.30) * (env + echo)
+            else:
+                # Double Finger / Crisp Slap: Tiếng vỗ giòn nhanh
+                center_freq = np.random.uniform(3200, 6500)
+                decay_rate = np.random.uniform(8, 22)
+                env = np.exp(-t * (1000.0 / decay_rate))
+                noise = np.random.normal(0, 1, len(t))
+                clap_sample = noise * env
+
             clap_sample = clap_sample / (np.max(np.abs(clap_sample)) + 1e-6)
             np.save(claps_dir / f"seed_clap_{i+1:02d}.npy", clap_sample.astype(np.float32))
 

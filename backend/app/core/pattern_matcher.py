@@ -9,20 +9,20 @@ class ClapPatternMatcher:
     Cơ chế hoạt động:
     1. Cú vỗ 1 (Step 1): Mở cổng chờ (Armed State). Phát sự kiện chớp sáng nhẹ trên Web (Nhịp 1/2).
        - Hoàn toàn KHÔNG dùng Timer, KHÔNG sinh sự kiện 1 vỗ (Single Clap), KHÔNG tạo log rác.
-       - Tự động hết hạn trong im lặng nếu sau 550ms không có cú vỗ thứ 2.
-    2. Cú vỗ 2 (Step 2): Khi có cú vỗ thứ 2 trong khoảng 70ms - 550ms:
+       - Tự động hết hạn trong im lặng nếu sau 750ms không có cú vỗ thứ 2.
+    2. Cú vỗ 2 (Step 2): Khi có cú vỗ thứ 2 trong khoảng 110ms - 750ms:
        - KÍCH HOẠT TỨC THÌ (Zero Latency = 0ms).
        - Bật/tắt đèn và gửi Webhook Home Assistant ngay tại thời điểm dứt tiếng vỗ thứ 2!
        - Bắt trọn vẹn cả 2 tiếng vỗ trong đoạn ghi âm 800ms.
     3. Bộ lọc chống dội âm (Anti-Echo / Reverb Rejection):
-       - Bỏ qua các xung < 70ms (tiếng vọng âm học trong phòng).
-       - Đặt Cooldown 400ms sau khi thực hiện hành động để chống dội lệnh.
+       - Bỏ qua các xung < 110ms (tiếng vọng âm học trong phòng).
+       - Đặt Cooldown 350ms sau khi thực hiện hành động để chống dội lệnh.
     """
     def __init__(
         self,
-        min_interval_ms: int = 140,
-        max_interval_ms: int = 500,
-        cooldown_ms: int = 400,
+        min_interval_ms: int = 110,
+        max_interval_ms: int = 750,
+        cooldown_ms: int = 350,
         on_pattern_callback: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None
     ):
         self.min_interval_ms = min_interval_ms
@@ -71,7 +71,7 @@ class ClapPatternMatcher:
                 print(f"[InstantPatternMatcher] [Anti-Echo] Dropped pulse too close ({delta_ms:.1f}ms < {self.min_interval_ms}ms)")
                 return None
 
-            # Khoảng cách chuẩn (70ms - 550ms): KÍCH HOẠT DOUBLE CLAP NGAY TỨC THÌ!
+            # Khoảng cách chuẩn (110ms - 750ms): KÍCH HOẠT DOUBLE CLAP NGAY TỨC THÌ!
             if self.min_interval_ms <= delta_ms <= self.max_interval_ms:
                 print(f"\n{'='*55}\n🎉 [InstantPatternMatcher] 👏👏 DOUBLE CLAP CONFIRMED! Delta = {delta_ms:.1f}ms (Zero Delay Trigger)\n{'='*55}")
                 self.last_action_time = now

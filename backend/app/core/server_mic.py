@@ -12,6 +12,7 @@ logger = logging.getLogger("handclap.server_mic")
 class ServerMicrophoneStreamer:
     """
     Thu âm trực tiếp từ Microphone tích hợp của Server Laptop (Dell ALC3246 / ALSA).
+    Tối ưu hóa âm lượng thu âm phần cứng & Kỹ thuật số (Digital Gain Boost 1.35x).
     Bổ sung Heartbeat Watchdog 24/7: Tự động khởi động lại luồng nếu mất tín hiệu audio > 3s.
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
@@ -24,10 +25,27 @@ class ServerMicrophoneStreamer:
         self.proc: Optional[subprocess.Popen] = None
         self._backend = "none"
 
+    def _optimize_linux_alsa_gain(self):
+        """Tự động nâng mức âm lượng thu âm phần cứng của Micro Laptop lên mức tối đa"""
+        commands = [
+            ["amixer", "set", "Capture", "100%"],
+            ["amixer", "set", "Capture Volume", "100%"],
+            ["amixer", "set", "Internal Mic Boost", "2"],
+            ["amixer", "set", "Mic Boost", "2"],
+            ["amixer", "set", "Digital", "100%"],
+            ["amixer", "sset", "Capture", "cap"]
+        ]
+        for cmd in commands:
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+            except Exception:
+                pass
+
     def start(self):
         if self.is_running:
             return
         
+        self._optimize_linux_alsa_gain()
         self.is_running = True
         self.last_chunk_time = time.time()
         
@@ -61,7 +79,6 @@ class ServerMicrophoneStreamer:
                 break
             
             now = time.time()
-            # Nếu đã chạy và sau 4 giây đầu không có chunk nào đến trong 3s gần nhất
             if self.last_chunk_time > 0 and (now - self.last_chunk_time > 3.0):
                 logger.warning(f"Audio stream stall detected (no PCM for {now - self.last_chunk_time:.1f}s)! Watchdog restarting mic capture...")
                 if self.proc and self.proc.poll() is None:
@@ -124,8 +141,9 @@ class ServerMicrophoneStreamer:
                 # Xử lý chunk đầu tiên
                 audio_int16 = np.frombuffer(first_chunk, dtype=np.int16)
                 audio_float = audio_int16.astype(np.float32) / 32768.0
+                audio_boosted = np.clip(audio_float * 1.35, -1.0, 1.0)
                 try:
-                    telemetry = live_engine.process_chunk(audio_float)
+                    telemetry = live_engine.process_chunk(audio_boosted)
                     if live_engine.broadcast_callback:
                         live_engine.broadcast_callback(telemetry)
                 except Exception:
@@ -141,15 +159,16 @@ class ServerMicrophoneStreamer:
                     self.last_chunk_time = time.time()
                     audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
                     audio_float = audio_int16.astype(np.float32) / 32768.0
+                    audio_boosted = np.clip(audio_float * 1.35, -1.0, 1.0)
 
                     chunk_count += 1
                     if chunk_count % 150 == 0:
-                        rms = float(np.sqrt(np.mean(audio_float ** 2) + 1e-10))
-                        peak = float(np.max(np.abs(audio_float)))
+                        rms = float(np.sqrt(np.mean(audio_boosted ** 2) + 1e-10))
+                        peak = float(np.max(np.abs(audio_boosted)))
                         logger.info(f"[ServerMic Heartbeat] ALC3246 Active ({dev}): Signal RMS={rms:.4f}, Peak={peak:.4f}, NoiseFloor={live_engine.noise_estimator.noise_floor_rms:.4f}")
 
                     try:
-                        telemetry = live_engine.process_chunk(audio_float)
+                        telemetry = live_engine.process_chunk(audio_boosted)
                         if live_engine.broadcast_callback:
                             live_engine.broadcast_callback(telemetry)
                     except Exception as e:
@@ -193,8 +212,9 @@ class ServerMicrophoneStreamer:
                         return
                     self.last_chunk_time = time.time()
                     audio_mono = indata[:, 0].astype(np.float32)
+                    audio_boosted = np.clip(audio_mono * 1.35, -1.0, 1.0)
                     try:
-                        telemetry = live_engine.process_chunk(audio_mono)
+                        telemetry = live_engine.process_chunk(audio_boosted)
                         if live_engine.broadcast_callback:
                             live_engine.broadcast_callback(telemetry)
                     except Exception as err:

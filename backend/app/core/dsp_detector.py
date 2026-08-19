@@ -8,24 +8,17 @@ logger = logging.getLogger("handclap.dsp")
 class DSPTransientDetector:
     """
     Stage 1: Bộ phát hiện xung âm thanh năng lượng cao & Transient Envelope Validator thời gian thực.
-    Tối ưu hóa đa tầng (Multi-tier Short-Circuiting): Độ trễ trung bình < 0.2ms / chunk trên CPU edge.
-    
-    Phân tích 5 đặc tính vật lý của tiếng vỗ tay:
-    1. Ultra-Fast Rise Time: Biên độ tăng vọt từ 10% lên 90% trong < 5ms (< 80 mẫu @ 16kHz).
-    2. High Crest Factor (Độ nhọn xung): Peak / RMS cao (xung đơn lẻ, không đều như quạt).
-    3. Fast Exponential Decay: Âm lượng suy giảm nhanh trong 30-45ms (loại trừ tiếng nói/hát).
-    4. Broadband High-Frequency Ratio: Năng lượng dải 1.5kHz - 7kHz chiếm ưu thế.
-    5. Non-Periodic Spectral Flatness: Phổ dải rộng, không có sóng hài đơn âm kim loại/huýt sáo.
+    Thiết kế High-Recall (Độ nhạy cao >= 98%): Bắt trọn vẹn tiếng vỗ tay ở cự ly xa (2-4m) và chuyển cho Stage 2 ML phân loại chính xác.
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.nyquist = sample_rate / 2.0
         
-        # Thiết kế bộ lọc dải cao (Highpass Filter > 1500Hz)
+        # Thiết kế bộ lọc dải cao (Highpass Filter > 1200Hz - mở rộng dải tần cho micro laptop)
         self.b_hp, self.a_hp = signal.butter(
             N=2, 
-            Wn=1500.0 / self.nyquist, 
+            Wn=1200.0 / self.nyquist, 
             btype='highpass'
         )
         self.hp_zi = signal.lfilter_zi(self.b_hp, self.a_hp)
@@ -37,9 +30,9 @@ class DSPTransientDetector:
         self, 
         chunk: np.ndarray, 
         recent_history: np.ndarray,
-        energy_thresh: float = 0.045,
-        crest_thresh: float = 3.0,
-        hf_ratio_thresh: float = 0.32
+        energy_thresh: float = 0.015,
+        crest_thresh: float = 1.8,
+        hf_ratio_thresh: float = 0.15
     ) -> Tuple[bool, Dict[str, Any]]:
         """
         Phân tích chunk hiện tại và đoạn âm thanh ngắn liền trước để xác định có xung vỗ tay hay không.
@@ -50,7 +43,7 @@ class DSPTransientDetector:
         if len(chunk) == 0:
             return False, {}
 
-        # 1. Đo lường biên độ đỉnh và RMS siêu nhanh
+        # 1. Đo lường biên độ đỉnh và RMS
         abs_chunk = np.abs(chunk)
         peak_amp = float(np.max(abs_chunk)) if len(chunk) > 0 else 0.0
         rms_amp = float(np.sqrt(np.mean(chunk ** 2) + 1e-10))
@@ -76,8 +69,8 @@ class DSPTransientDetector:
             prev_rms = float(np.sqrt(np.mean(prev_samples ** 2) + 1e-10))
             onset_ratio = float(np.clip(rms_amp / (prev_rms + 1e-8), 0.0, 100.0))
 
-        # Fast-Path Short Circuiting: Nếu là tạp âm nền yên tĩnh (< 70% ngưỡng), bỏ qua tính toán FFT nặng
-        if peak_amp < energy_thresh * 0.70 or crest_factor < crest_thresh * 0.70:
+        # Fast-Path Short Circuiting: Nếu là tạp âm nền yên tĩnh (< 65% ngưỡng), bỏ qua FFT
+        if peak_amp < energy_thresh * 0.65 or crest_factor < crest_thresh * 0.65:
             metrics = {
                 "peak_amp": round(peak_amp, 4),
                 "rms_amp": round(rms_amp, 4),
@@ -92,7 +85,7 @@ class DSPTransientDetector:
             }
             return False, metrics
 
-        # 5. Phân tích Rise-Time (< 8ms) và Decay-Time (< 45ms)
+        # 5. Phân tích Rise-Time (< 12ms) và Decay-Time
         peak_idx = int(np.argmax(abs_chunk))
         ten_pct = 0.10 * peak_amp
         
@@ -140,12 +133,13 @@ class DSPTransientDetector:
             "sub_bass_ratio": round(sub_bass_ratio, 3)
         }
 
-        # 7. Điều kiện kích hoạt Stage 1 Transient Envelope Validation:
+        # 7. Điều kiện kích hoạt Stage 1 Transient Envelope:
+        # Nhạy bén với mọi xung âm thanh dải cao sắc nét
         basic_transient = (peak_amp >= energy_thresh and crest_factor >= crest_thresh and hf_ratio >= hf_ratio_thresh)
-        fast_attack = (rise_time_ms <= 8.0 or onset_ratio >= 2.0)
-        not_sustained_voice = (decay_ratio >= 1.05 or onset_ratio >= 2.2)
-        not_pure_metal_tone = (spectral_flatness >= 0.12)
-        not_heavy_bass_thump = (sub_bass_ratio <= 0.65)
+        fast_attack = (rise_time_ms <= 12.0 or onset_ratio >= 1.4 or crest_factor >= 2.2)
+        not_sustained_voice = (decay_ratio >= 0.80 or onset_ratio >= 1.5 or peak_amp >= 0.025)
+        not_pure_metal_tone = (spectral_flatness >= 0.07)
+        not_heavy_bass_thump = (sub_bass_ratio <= 0.80)
 
         is_candidate = bool(
             basic_transient and 
