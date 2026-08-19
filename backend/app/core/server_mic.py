@@ -12,8 +12,7 @@ logger = logging.getLogger("handclap.server_mic")
 class ServerMicrophoneStreamer:
     """
     Thu âm trực tiếp từ Microphone tích hợp của Server Laptop (Dell ALC3246 / ALSA).
-    Khử nhiễu DC Offset (DC Bias Filter), cân chỉnh âm lượng phần cứng tối ưu,
-    và tự động chuyển sang cổng micro có âm thanh thực tế.
+    Khử nhiễu DC Offset, giữ âm lượng ở mức tự nhiên tiêu chuẩn (không over-boost).
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
         self.sample_rate = sample_rate
@@ -26,19 +25,19 @@ class ServerMicrophoneStreamer:
         self._backend = "none"
 
     def _optimize_linux_alsa_gain(self):
-        """Cân chỉnh mức âm lượng phần cứng của Micro Laptop ở mức chuẩn 80% (tránh vỡ tiếng/bão hòa)"""
+        """Cân chỉnh mức âm lượng phần cứng của Micro Laptop ở mức tiêu chuẩn 70% (tự nhiên, không vỡ tiếng)"""
         cards = ["0", "1", "2", "default"]
         for c in cards:
             card_args = ["-c", c] if c != "default" else []
             commands = [
                 ["amixer"] + card_args + ["set", "Input Source", "Internal Mic"],
                 ["amixer"] + card_args + ["set", "Capture", "cap"],
-                ["amixer"] + card_args + ["set", "Capture", "80%", "unmute"],
-                ["amixer"] + card_args + ["set", "Capture Volume", "80%", "unmute"],
-                ["amixer"] + card_args + ["set", "Internal Mic", "80%", "unmute"],
-                ["amixer"] + card_args + ["set", "Internal Mic Boost", "1"],
-                ["amixer"] + card_args + ["set", "Mic Boost", "1"],
-                ["amixer"] + card_args + ["set", "Digital", "80%", "unmute"],
+                ["amixer"] + card_args + ["set", "Capture", "70%", "unmute"],
+                ["amixer"] + card_args + ["set", "Capture Volume", "70%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic", "70%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic Boost", "0"],
+                ["amixer"] + card_args + ["set", "Mic Boost", "0"],
+                ["amixer"] + card_args + ["set", "Digital", "70%", "unmute"],
                 ["amixer"] + card_args + ["set", "Master", "100%", "unmute"]
             ]
             for cmd in commands:
