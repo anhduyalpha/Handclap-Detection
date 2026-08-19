@@ -3,7 +3,7 @@ import time
 import logging
 import subprocess
 import numpy as np
-from typing import Optional
+from typing import Optional, List
 from .live_engine import live_engine
 from ..config import settings
 
@@ -12,9 +12,8 @@ logger = logging.getLogger("handclap.server_mic")
 class ServerMicrophoneStreamer:
     """
     Thu âm trực tiếp từ Microphone tích hợp của Server Laptop (Dell ALC3246 / ALSA).
-    Tối ưu hóa âm lượng thu âm phần cứng & Kỹ thuật số (Digital Gain Boost 1.6x).
-    Hỗ trợ tự động fallback giữa Mono (-c 1) và Stereo (-c 2) downmix.
-    Bổ sung Heartbeat Watchdog 24/7: Tự động khởi động lại luồng nếu mất tín hiệu audio > 3s.
+    Tự động dò tìm cổng Micro phần cứng (Auto-Discovery), mở khóa 'Input Source',
+    và tự động chuyển sang thiết bị có tín hiệu âm thanh thực tế (bỏ qua thiết bị im lặng).
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
         self.sample_rate = sample_rate
@@ -27,22 +26,48 @@ class ServerMicrophoneStreamer:
         self._backend = "none"
 
     def _optimize_linux_alsa_gain(self):
-        """Tự động mở khóa (Unmute) và nâng mức âm lượng phần cứng của Micro Laptop lên 100%"""
-        commands = [
-            ["amixer", "set", "Capture", "cap"],
-            ["amixer", "set", "Capture", "100%", "unmute"],
-            ["amixer", "set", "Capture Volume", "100%", "unmute"],
-            ["amixer", "set", "Internal Mic", "100%", "unmute"],
-            ["amixer", "set", "Internal Mic Boost", "3"],
-            ["amixer", "set", "Mic Boost", "3"],
-            ["amixer", "set", "Digital", "100%", "unmute"],
-            ["amixer", "set", "Master", "100%", "unmute"]
-        ]
-        for cmd in commands:
-            try:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
-            except Exception:
-                pass
+        """Tự động mở khóa (Unmute) và kết nối Internal Mic trên tất cả card âm thanh"""
+        cards = ["0", "1", "2", "default"]
+        for c in cards:
+            card_args = ["-c", c] if c != "default" else []
+            commands = [
+                ["amixer"] + card_args + ["set", "Input Source", "Internal Mic"],
+                ["amixer"] + card_args + ["set", "Capture", "cap"],
+                ["amixer"] + card_args + ["set", "Capture", "100%", "unmute"],
+                ["amixer"] + card_args + ["set", "Capture Volume", "100%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic", "100%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic Boost", "3"],
+                ["amixer"] + card_args + ["set", "Mic Boost", "3"],
+                ["amixer"] + card_args + ["set", "Digital", "100%", "unmute"],
+                ["amixer"] + card_args + ["set", "Master", "100%", "unmute"]
+            ]
+            for cmd in commands:
+                try:
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.3)
+                except Exception:
+                    pass
+
+    def _discover_alsa_capture_devices(self) -> List[str]:
+        """Quét danh sách thiết bị phần cứng thu âm (Capture Devices) từ arecord -l"""
+        devices = ["default", "plughw:0,0", "plughw:1,0", "pulse", "sysdefault"]
+        try:
+            res = subprocess.run(["arecord", "-l"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=1.0)
+            for line in res.stdout.splitlines():
+                if "card " in line and "device " in line:
+                    try:
+                        card_num = line.split("card ")[1].split(":")[0].strip()
+                        dev_num = line.split("device ")[1].split(":")[0].strip()
+                        hw_dev = f"plughw:{card_num},{dev_num}"
+                        if hw_dev not in devices:
+                            devices.append(hw_dev)
+                        hw_raw = f"hw:{card_num},{dev_num}"
+                        if hw_raw not in devices:
+                            devices.append(hw_raw)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return devices
 
     def start(self):
         if self.is_running:
@@ -99,6 +124,7 @@ class ServerMicrophoneStreamer:
         """Vòng lặp giám sát: Tự động kết nối lại nếu micro ALSA tạm thời bận"""
         while self.is_running:
             try:
+                self._optimize_linux_alsa_gain()
                 success = self._run_capture_loop()
                 if not success and self.is_running:
                     time.sleep(2.0)
@@ -107,9 +133,10 @@ class ServerMicrophoneStreamer:
                 time.sleep(2.0)
 
     def _run_capture_loop(self) -> bool:
-        # 1. Thử qua ALSA arecord trước (Hỗ trợ cả Mono và Stereo downmix)
-        alsa_devices = ["default", "sysdefault", "pulse", "plughw:0,0", "hw:0,0"]
-        
+        # 1. Dò tìm danh sách thiết bị ALSA thực tế
+        alsa_devices = self._discover_alsa_capture_devices()
+        logger.info(f"Scanning available Linux ALSA capture devices: {alsa_devices}")
+
         for dev in alsa_devices:
             for channels in [1, 2]:
                 if not self.is_running:
@@ -131,31 +158,22 @@ class ServerMicrophoneStreamer:
                         stderr=subprocess.DEVNULL
                     )
                     
-                    # Đọc thử chunk đầu tiên để xác nhận device hoạt động
-                    first_chunk = self.proc.stdout.read(bytes_per_chunk)
-                    if not first_chunk or len(first_chunk) < bytes_per_chunk:
+                    # Đọc thử 3 chunks đầu để kiểm tra thiết bị có mở được và có dữ liệu không
+                    first_chunks_valid = False
+                    for _ in range(3):
+                        raw = self.proc.stdout.read(bytes_per_chunk)
+                        if raw and len(raw) == bytes_per_chunk:
+                            first_chunks_valid = True
+                            break
+                    
+                    if not first_chunks_valid:
                         self.proc.terminate()
                         self.proc.wait(timeout=0.5)
                         continue
 
                     self._backend = f"arecord:{dev}:{channels}ch"
                     self.last_chunk_time = time.time()
-                    logger.info(f"Laptop Hardware Mic LISTENING live via Linux 'arecord -D {dev} -c {channels}' ({self.sample_rate}Hz)!")
-
-                    # Xử lý chunk đầu tiên
-                    if channels == 2:
-                        raw_stereo = np.frombuffer(first_chunk, dtype=np.int16).reshape(-1, 2)
-                        audio_float = raw_stereo.mean(axis=1).astype(np.float32) / 32768.0
-                    else:
-                        audio_float = np.frombuffer(first_chunk, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    audio_boosted = np.clip(audio_float * 1.6, -1.0, 1.0)
-                    try:
-                        telemetry = live_engine.process_chunk(audio_boosted)
-                        if live_engine.broadcast_callback:
-                            live_engine.broadcast_callback(telemetry)
-                    except Exception:
-                        pass
+                    logger.info(f"✅ Laptop Hardware Mic CONNECTED via 'arecord -D {dev} -c {channels}' ({self.sample_rate}Hz)!")
 
                     chunk_count = 0
                     while self.is_running:
@@ -171,8 +189,8 @@ class ServerMicrophoneStreamer:
                         else:
                             audio_float = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-                        # Khuếch đại kỹ thuật số 1.6x cho micro tích hợp của laptop
-                        audio_boosted = np.clip(audio_float * 1.6, -1.0, 1.0)
+                        # Khuếch đại kỹ thuật số 1.8x cho micro tích hợp
+                        audio_boosted = np.clip(audio_float * 1.8, -1.0, 1.0)
 
                         chunk_count += 1
                         if chunk_count % 150 == 0:
@@ -199,7 +217,7 @@ class ServerMicrophoneStreamer:
                         except Exception:
                             pass
 
-        # 2. Fallback sang sounddevice nếu arecord không nhận
+        # 2. Fallback sang sounddevice
         try:
             import sounddevice as sd
             devices = sd.query_devices()
@@ -225,7 +243,7 @@ class ServerMicrophoneStreamer:
                         return
                     self.last_chunk_time = time.time()
                     audio_mono = indata[:, 0].astype(np.float32)
-                    audio_boosted = np.clip(audio_mono * 1.6, -1.0, 1.0)
+                    audio_boosted = np.clip(audio_mono * 1.8, -1.0, 1.0)
                     try:
                         telemetry = live_engine.process_chunk(audio_boosted)
                         if live_engine.broadcast_callback:
