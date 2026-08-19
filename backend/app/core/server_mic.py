@@ -12,8 +12,8 @@ logger = logging.getLogger("handclap.server_mic")
 class ServerMicrophoneStreamer:
     """
     Thu âm trực tiếp từ Microphone tích hợp của Server Laptop (Dell ALC3246 / ALSA).
-    Tự động dò tìm cổng Micro phần cứng (Auto-Discovery), mở khóa 'Input Source',
-    và tự động chuyển sang thiết bị có tín hiệu âm thanh thực tế (bỏ qua thiết bị im lặng).
+    Khử nhiễu DC Offset (DC Bias Filter), cân chỉnh âm lượng phần cứng tối ưu,
+    và tự động chuyển sang cổng micro có âm thanh thực tế.
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
         self.sample_rate = sample_rate
@@ -26,19 +26,19 @@ class ServerMicrophoneStreamer:
         self._backend = "none"
 
     def _optimize_linux_alsa_gain(self):
-        """Tự động mở khóa (Unmute) và kết nối Internal Mic trên tất cả card âm thanh"""
+        """Cân chỉnh mức âm lượng phần cứng của Micro Laptop ở mức chuẩn 80% (tránh vỡ tiếng/bão hòa)"""
         cards = ["0", "1", "2", "default"]
         for c in cards:
             card_args = ["-c", c] if c != "default" else []
             commands = [
                 ["amixer"] + card_args + ["set", "Input Source", "Internal Mic"],
                 ["amixer"] + card_args + ["set", "Capture", "cap"],
-                ["amixer"] + card_args + ["set", "Capture", "100%", "unmute"],
-                ["amixer"] + card_args + ["set", "Capture Volume", "100%", "unmute"],
-                ["amixer"] + card_args + ["set", "Internal Mic", "100%", "unmute"],
-                ["amixer"] + card_args + ["set", "Internal Mic Boost", "3"],
-                ["amixer"] + card_args + ["set", "Mic Boost", "3"],
-                ["amixer"] + card_args + ["set", "Digital", "100%", "unmute"],
+                ["amixer"] + card_args + ["set", "Capture", "80%", "unmute"],
+                ["amixer"] + card_args + ["set", "Capture Volume", "80%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic", "80%", "unmute"],
+                ["amixer"] + card_args + ["set", "Internal Mic Boost", "1"],
+                ["amixer"] + card_args + ["set", "Mic Boost", "1"],
+                ["amixer"] + card_args + ["set", "Digital", "80%", "unmute"],
                 ["amixer"] + card_args + ["set", "Master", "100%", "unmute"]
             ]
             for cmd in commands:
@@ -133,7 +133,6 @@ class ServerMicrophoneStreamer:
                 time.sleep(2.0)
 
     def _run_capture_loop(self) -> bool:
-        # 1. Dò tìm danh sách thiết bị ALSA thực tế
         alsa_devices = self._discover_alsa_capture_devices()
         logger.info(f"Scanning available Linux ALSA capture devices: {alsa_devices}")
 
@@ -158,7 +157,7 @@ class ServerMicrophoneStreamer:
                         stderr=subprocess.DEVNULL
                     )
                     
-                    # Đọc thử 3 chunks đầu để kiểm tra thiết bị có mở được và có dữ liệu không
+                    # Đọc thử 3 chunks đầu
                     first_chunks_valid = False
                     for _ in range(3):
                         raw = self.proc.stdout.read(bytes_per_chunk)
@@ -189,17 +188,18 @@ class ServerMicrophoneStreamer:
                         else:
                             audio_float = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-                        # Khuếch đại kỹ thuật số 1.8x cho micro tích hợp
-                        audio_boosted = np.clip(audio_float * 1.8, -1.0, 1.0)
+                        # 1. Khử DC Offset (DC Bias Removal)
+                        audio_clean = audio_float - float(np.mean(audio_float))
+                        audio_clean = np.clip(audio_clean, -1.0, 1.0)
 
                         chunk_count += 1
                         if chunk_count % 150 == 0:
-                            rms = float(np.sqrt(np.mean(audio_boosted ** 2) + 1e-10))
-                            peak = float(np.max(np.abs(audio_boosted)))
+                            rms = float(np.sqrt(np.mean(audio_clean ** 2) + 1e-10))
+                            peak = float(np.max(np.abs(audio_clean)))
                             logger.info(f"[ServerMic Heartbeat] ALC3246 Active ({dev} {channels}ch): Signal RMS={rms:.4f}, Peak={peak:.4f}, NoiseFloor={live_engine.noise_estimator.noise_floor_rms:.4f}")
 
                         try:
-                            telemetry = live_engine.process_chunk(audio_boosted)
+                            telemetry = live_engine.process_chunk(audio_clean)
                             if live_engine.broadcast_callback:
                                 live_engine.broadcast_callback(telemetry)
                         except Exception as e:
@@ -243,9 +243,10 @@ class ServerMicrophoneStreamer:
                         return
                     self.last_chunk_time = time.time()
                     audio_mono = indata[:, 0].astype(np.float32)
-                    audio_boosted = np.clip(audio_mono * 1.8, -1.0, 1.0)
+                    audio_clean = audio_mono - float(np.mean(audio_mono))
+                    audio_clean = np.clip(audio_clean, -1.0, 1.0)
                     try:
-                        telemetry = live_engine.process_chunk(audio_boosted)
+                        telemetry = live_engine.process_chunk(audio_clean)
                         if live_engine.broadcast_callback:
                             live_engine.broadcast_callback(telemetry)
                     except Exception as err:

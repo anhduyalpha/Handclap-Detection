@@ -16,7 +16,8 @@ from app.config import settings
 
 def draw_vu_meter(peak: float, rms: float, is_transient: bool, confidence: float, is_clap: bool):
     meter_len = 30
-    filled = min(meter_len, int(peak * 100))
+    # Chuẩn hóa độ dài thanh đo theo thang 0.0 - 1.0
+    filled = min(meter_len, max(0, int(peak * meter_len)))
     bar = "█" * filled + "░" * (meter_len - filled)
     
     status_str = ""
@@ -32,11 +33,11 @@ def main():
     print("=" * 70)
     print("  🎤 REAL-TIME MICROPHONE & HARDWARE CLAP TESTER")
     print("  🖥️  Operating System:", "Windows" if os.name == "nt" else "Linux/ALSA")
-    print("  🔊 Nhìn thanh VU-meter bên dưới: Thử vỗ tay hoặc nói để kiểm tra mic!")
-    print("  🛑 Bấm Ctrl+C để dừng kiểm tra.")
+    print("  🔊 Thanh đo VU-meter bên dưới (0.000 im lặng -> 1.000 đỉnh xung):")
+    print("  👏 Hãy thử nói hoặc vỗ tay 2 nhịp để kiểm tra độ nhạy!")
+    print("  🛑 Bấm Ctrl+C để kết thúc.")
     print("=" * 70)
 
-    # Đăng ký callback hiển thị trực tiếp
     def custom_broadcast(data):
         if data.get("type") == "TELEMETRY":
             peak = data.get("peak", 0.0)

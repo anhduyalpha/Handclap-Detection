@@ -114,8 +114,11 @@ class LiveDetectionEngine:
         if len(audio_chunk) == 0:
             return {"rms": 0.0, "peak": 0.0, "stage1": False, "stage2": False}
 
+        # Khử DC Offset và chuẩn hóa
+        clean_chunk = audio_chunk - float(np.mean(audio_chunk))
+
         # 1. Ghi vào Ring Buffer
-        self.ring_buffer.write(audio_chunk)
+        self.ring_buffer.write(clean_chunk)
 
         # Kiểm tra tự động Hot-Reload nếu có model mới trên đĩa (mỗi ~3s)
         self._check_counter += 1
@@ -132,7 +135,7 @@ class LiveDetectionEngine:
         confidence_thresh = self.noise_estimator.dynamic_confidence_thresh if settings.adaptive_noise.enabled else settings.ml.confidence_threshold
 
         is_transient, dsp_metrics = self.dsp_detector.analyze_chunk(
-            chunk=audio_chunk,
+            chunk=clean_chunk,
             recent_history=recent_history,
             energy_thresh=energy_thresh,
             crest_thresh=crest_thresh,
