@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 from ..smart_home.virtual_bulb import virtual_bulb
 from ..smart_home.action_dispatcher import action_dispatcher
 from ..core.live_engine import live_engine
-from ..config import settings
+from ..config import settings, save_persistent_settings
 from ..core.security import validate_outbound_url
 
 router = APIRouter(prefix="/api", tags=["devices_and_settings"])
@@ -121,4 +121,5 @@ def update_settings(req: SettingsUpdateRequest):
     if req.auto_collect_true_claps is not None:
         settings.auto_collect_true_claps = req.auto_collect_true_claps
 
+    save_persistent_settings()
     return {"status": "success", "settings": get_settings()}
