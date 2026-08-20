@@ -11,7 +11,7 @@ echo "[*] Đang gửi lệnh khởi động lại dịch vụ ${SERVICE_NAME}...
 sudo systemctl restart "${SERVICE_NAME}"
 
 echo -n "[*] Đang đợi Web Server và API khởi động hoàn tất"
-MAX_RETRIES=30
+MAX_RETRIES=40
 RETRY=0
 READY=0
 
@@ -33,7 +33,10 @@ if [ $READY -eq 1 ]; then
     echo "  📊 API Docs:      http://${SERVER_IP}:8000/docs"
     echo "=================================================================="
 else
-    echo -e " \033[31m[CHƯA PHẢN HỒI]\033[0m"
-    echo "[!] Web Server chưa phản hồi sau 15s. Xem log chi tiết:"
-    journalctl -u ${SERVICE_NAME} -n 20 --no-pager
+    echo -e " \033[33m[ĐANG KHỞI ĐỘNG]\033[0m"
+    echo "[*] Kiểm tra trạng thái dịch vụ:"
+    sudo systemctl status ${SERVICE_NAME} --no-pager
+    echo "=================================================================="
+    echo "  🌐 Web Dashboard: http://${SERVER_IP}:8000"
+    echo "=================================================================="
 fi
