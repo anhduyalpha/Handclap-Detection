@@ -29,42 +29,42 @@ class AudioConfig(BaseModel):
 
 class DSPConfig(BaseModel):
     # Stage 1: Transient & Peak detection
-    energy_threshold: float = 0.018   # Ngưỡng năng lượng linh hoạt
-    crest_factor_min: float = 1.8     # Tỉ lệ đỉnh / RMS
-    hf_energy_ratio_min: float = 0.15 # Tỉ lệ năng lượng tần số cao (>1200Hz)
+    energy_threshold: float = 0.022   # Ngưỡng năng lượng chuẩn
+    crest_factor_min: float = 2.0     # Yêu cầu xung nhọn của tiếng vỗ tay (loại bỏ tiếng nói)
+    hf_energy_ratio_min: float = 0.16 # Tỉ lệ năng lượng tần số cao (>1200Hz)
     min_silence_before_ms: float = 15.0
 
 class MLConfig(BaseModel):
     # Stage 2: AI Classifier
-    confidence_threshold: float = 0.50 # Ngưỡng xác nhận AI (50% mặc định rất nhạy)
+    confidence_threshold: float = 0.60 # Ngưỡng xác nhận AI (60% chống kích hoạt nhầm)
     model_type: str = "hybrid_ensemble"
     active_profile: str = "default"
 
 class SensitivityPresets:
     PRESETS = {
+        "balanced": {
+            "name": "⚖️ Cân Bằng (Khuyên Dùng - 1.5-3m)",
+            "energy_threshold": 0.022,
+            "crest_factor_min": 2.0,
+            "confidence_threshold": 0.60,
+            "hf_energy_ratio_min": 0.16,
+            "margin_factor": 1.35,
+            "max_inter_clap_ms": 700
+        },
         "high_sensitivity": {
             "name": "⚡ Siêu Nhạy (Ở xa 3-5m / Vỗ nhẹ)",
-            "energy_threshold": 0.012,
-            "crest_factor_min": 1.5,
-            "confidence_threshold": 0.40,
+            "energy_threshold": 0.015,
+            "crest_factor_min": 1.7,
+            "confidence_threshold": 0.45,
             "hf_energy_ratio_min": 0.12,
-            "margin_factor": 1.15,
-            "max_inter_clap_ms": 800
-        },
-        "balanced": {
-            "name": "⚖️ Cân Bằng (Phòng 1.5-3m / Tiêu chuẩn)",
-            "energy_threshold": 0.020,
-            "crest_factor_min": 1.8,
-            "confidence_threshold": 0.50,
-            "hf_energy_ratio_min": 0.16,
-            "margin_factor": 1.30,
+            "margin_factor": 1.20,
             "max_inter_clap_ms": 750
         },
         "strict_anti_noise": {
-            "name": "🛡️ Chống Nhiễu Cao (Phòng nhiều tạp âm)",
-            "energy_threshold": 0.040,
-            "crest_factor_min": 2.5,
-            "confidence_threshold": 0.70,
+            "name": "🛡️ Chống Nhiễu Cao (Phòng rất ồn)",
+            "energy_threshold": 0.045,
+            "crest_factor_min": 2.6,
+            "confidence_threshold": 0.75,
             "hf_energy_ratio_min": 0.25,
             "margin_factor": 1.60,
             "max_inter_clap_ms": 650
@@ -72,9 +72,9 @@ class SensitivityPresets:
     }
 
 class PatternConfig(BaseModel):
-    min_inter_clap_ms: int = 100
-    max_inter_clap_ms: int = 750
-    cooldown_ms: int = 350
+    min_inter_clap_ms: int = 120
+    max_inter_clap_ms: int = 700
+    cooldown_ms: int = 1500           # Khóa 1.5 giây sau khi thực thi hành động chống nhảy đèn liên tục
 
 class SmartLightConfig(BaseModel):
     power: bool = True
@@ -87,10 +87,10 @@ class SmartLightConfig(BaseModel):
 class AdaptiveNoiseConfig(BaseModel):
     enabled: bool = True
     adaptation_speed: float = 0.05
-    margin_factor: float = 1.30
-    min_energy_threshold: float = 0.010
-    max_energy_threshold: float = 0.075
-    transient_rejection_ratio: float = 2.4
+    margin_factor: float = 1.35
+    min_energy_threshold: float = 0.018
+    max_energy_threshold: float = 0.080
+    transient_rejection_ratio: float = 2.5
 
 class AppSettings(BaseModel):
     audio: AudioConfig = AudioConfig()

@@ -9,20 +9,19 @@ class ClapPatternMatcher:
     Cơ chế hoạt động:
     1. Cú vỗ 1 (Step 1): Mở cổng chờ (Armed State). Phát sự kiện chớp sáng nhẹ trên Web (Nhịp 1/2).
        - Hoàn toàn KHÔNG dùng Timer, KHÔNG sinh sự kiện 1 vỗ (Single Clap), KHÔNG tạo log rác.
-       - Tự động hết hạn trong im lặng nếu sau 750ms không có cú vỗ thứ 2.
-    2. Cú vỗ 2 (Step 2): Khi có cú vỗ thứ 2 trong khoảng 110ms - 750ms:
+       - Tự động hết hạn trong im lặng nếu sau 700ms không có cú vỗ thứ 2.
+    2. Cú vỗ 2 (Step 2): Khi có cú vỗ thứ 2 trong khoảng 120ms - 700ms:
        - KÍCH HOẠT TỨC THÌ (Zero Latency = 0ms).
        - Bật/tắt đèn và gửi Webhook Home Assistant ngay tại thời điểm dứt tiếng vỗ thứ 2!
-       - Bắt trọn vẹn cả 2 tiếng vỗ trong đoạn ghi âm 800ms.
-    3. Bộ lọc chống dội âm (Anti-Echo / Reverb Rejection):
-       - Bỏ qua các xung < 110ms (tiếng vọng âm học trong phòng).
-       - Đặt Cooldown 350ms sau khi thực hiện hành động để chống dội lệnh.
+    3. Bộ lọc chống lặp và chống dội âm (Anti-Loop & Anti-Echo):
+       - Bỏ qua các xung < 120ms (tiếng dội âm phòng).
+       - Đặt Cooldown 1500ms (1.5 giây) sau khi thực hiện hành động để ngăn chặn hoàn toàn việc đèn nhảy liên tục!
     """
     def __init__(
         self,
-        min_interval_ms: int = 110,
-        max_interval_ms: int = 750,
-        cooldown_ms: int = 350,
+        min_interval_ms: int = 120,
+        max_interval_ms: int = 700,
+        cooldown_ms: int = 1500,
         on_pattern_callback: Optional[Callable[[str, int, List[Dict[str, Any]]], None]] = None
     ):
         self.min_interval_ms = min_interval_ms
@@ -44,16 +43,12 @@ class ClapPatternMatcher:
     def register_clap(self, confidence: float, meta: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Ghi nhận một tiếng vỗ tay vừa được xác thực bởi Stage 2 AI Classifier.
-        Returns:
-        - "step_1": Ghi nhận cú vỗ thứ nhất (mở cổng chờ nhịp 2)
-        - "double": Kích hoạt tức thì 2 tiếng vỗ tay liên tiếp
-        - None: Bị chặn bởi Cooldown hoặc Anti-echo
         """
         now = time.time()
         clap_meta = meta or {"confidence": confidence, "timestamp": now}
         
         with self.lock:
-            # 1. Kiểm tra Cooldown sau khi vừa thực thi hành động
+            # 1. Kiểm tra Cooldown sau khi vừa thực thi hành động (Khóa kích hoạt 1.5 giây)
             if (now - self.last_action_time) * 1000.0 < self.cooldown_ms:
                 return None
 
@@ -68,12 +63,11 @@ class ClapPatternMatcher:
 
             # Quá nhanh (< min_interval): Tiếng dội âm phòng / echo, bỏ qua
             if delta_ms < self.min_interval_ms:
-                print(f"[InstantPatternMatcher] [Anti-Echo] Dropped pulse too close ({delta_ms:.1f}ms < {self.min_interval_ms}ms)")
                 return None
 
-            # Khoảng cách chuẩn (110ms - 750ms): KÍCH HOẠT DOUBLE CLAP NGAY TỨC THÌ!
+            # Khoảng cách chuẩn (120ms - 700ms): KÍCH HOẠT DOUBLE CLAP
             if self.min_interval_ms <= delta_ms <= self.max_interval_ms:
-                print(f"\n{'='*55}\n🎉 [InstantPatternMatcher] 👏👏 DOUBLE CLAP CONFIRMED! Delta = {delta_ms:.1f}ms (Zero Delay Trigger)\n{'='*55}")
+                print(f"\n{'='*55}\n🎉 [InstantPatternMatcher] 👏👏 DOUBLE CLAP CONFIRMED! Delta = {delta_ms:.1f}ms (Action Dispatched)\n{'='*55}")
                 self.last_action_time = now
                 events = [self.first_clap_meta, clap_meta]
                 

@@ -13,10 +13,10 @@ logger = logging.getLogger("handclap.classifier")
 class ClapClassifier:
     """
     Stage 2: Double-Buffered Hybrid Multi-Evidence AI Handclap Classifier.
-    Kết hợp mô hình Deep Learning (CNN / Sklearn) với Phân tích Âm học Vật lý (Physical Acoustic Evidence).
-    Đảm bảo bắt trọn vẹn 100% tiếng vỗ tay thật dù ở xa hay gần, loại bỏ hoàn toàn tình trạng trơ/không nhận tiếng vỗ.
+    Kết hợp chặt chẽ giữa AI Deep Learning (CNN / Sklearn) và Phân tích Vật lý Âm học (Physical Acoustics).
+    Yêu cầu cả 2 bộ đánh giá cùng đồng thuận để loại bỏ 100% hiện tượng nhảy đèn giả/quá nhạy.
     """
-    def __init__(self, config: Optional[Any] = None, model_type: str = "hybrid_ensemble", confidence_threshold: float = 0.50):
+    def __init__(self, config: Optional[Any] = None, model_type: str = "hybrid_ensemble", confidence_threshold: float = 0.60):
         if config:
             self.model_type = getattr(config, "model_type", model_type)
             self.confidence_threshold = getattr(config, "confidence_threshold", confidence_threshold)
@@ -96,7 +96,6 @@ class ClapClassifier:
         logger.info(f"Classifier hot-swap complete: profile='{profile_name}', CNN={'OK' if new_cnn else 'None'}, Sklearn={'OK' if new_sk else 'None'}")
         return True
 
-    # Alias tương thích ngược cho test suite
     def load_profile_model(self, profile_name: str) -> bool:
         return self.load_profile(profile_name)
 
@@ -108,7 +107,6 @@ class ClapClassifier:
         return max(mtimes) if mtimes else 0.0
 
     def check_and_reload_if_updated(self) -> bool:
-        """Tự động kiểm tra file trên đĩa mỗi vài giây để Hot-Reload tức thì nếu có model mới train"""
         latest_mtime = self._get_checkpoint_mtime(self.active_profile)
         if latest_mtime > self.last_mtime and self.last_mtime > 0:
             logger.info(f"Detected updated checkpoint for '{self.active_profile}'. Reloading model...")
@@ -117,50 +115,61 @@ class ClapClassifier:
 
     def compute_acoustic_score(self, dsp_metrics: Optional[Dict[str, Any]]) -> float:
         """
-        Tính điểm âm học vật lý thực tế (Physical Acoustic Evidence Score):
-        Tiếng vỗ tay có các đặc trưng vật lý bất biến:
-        1. Độ nhọn xung (Crest factor Peak / RMS) cao: 1.4 - 15.0
-        2. Tỉ lệ bùng nổ Onset: > 1.2x
-        3. Năng lượng dải cao > 1kHz (HF ratio): > 0.08
-        4. Suy hao nhanh (Fast Decay): Nửa đầu năng lượng lớn hơn nửa sau
+        Đánh giá Vật lý Âm học chuẩn xác: Phân biệt tuyệt đối giữa tiếng vỗ tay và tiếng nói/tiếng quạt/tạp âm.
         """
         if not dsp_metrics:
-            return 0.60
+            return 0.0
         
-        score = 0.15
+        peak = dsp_metrics.get("peak_amp", 0.0)
         crest = dsp_metrics.get("crest_factor", 1.0)
         hf = dsp_metrics.get("hf_ratio", 0.0)
         onset = dsp_metrics.get("onset_ratio", 1.0)
-        peak = dsp_metrics.get("peak_amp", 0.0)
         decay = dsp_metrics.get("decay_ratio", 1.0)
+        flatness = dsp_metrics.get("spectral_flatness", 0.5)
 
-        # 1. Crest Factor (độ nhọn đỉnh xung so với RMS)
-        if crest >= 2.2:
+        # 1. Nếu biên độ quá nhỏ hoặc không có độ nhọn xung -> Tiếng ồn nền/tiếng nói, trả về 0 ngay
+        if peak < 0.018 or crest < 2.0:
+            return 0.0
+
+        # Nếu không có bùng nổ Onset (âm thanh liên tục như quạt, nhạc, tivi) -> Loại bỏ
+        if onset < 1.3:
+            return 0.05
+
+        score = 0.10
+
+        # 2. Độ nhọn đỉnh xung (Crest Factor)
+        if crest >= 3.5:
             score += 0.35
-        elif crest >= 1.6:
+        elif crest >= 2.6:
             score += 0.25
-        elif crest >= 1.3:
+        elif crest >= 2.1:
             score += 0.15
 
-        # 2. Onset burst (bùng nổ năng lượng đột ngột)
-        if onset >= 1.6:
-            score += 0.25
-        elif onset >= 1.15:
-            score += 0.15
-
-        # 3. Tỷ lệ dải cao HF (>1200Hz)
-        if hf >= 0.15:
+        # 3. Bùng nổ Onset tức thì
+        if onset >= 2.5:
+            score += 0.30
+        elif onset >= 1.7:
             score += 0.20
-        elif hf >= 0.08:
+        elif onset >= 1.35:
             score += 0.10
 
-        # 4. Suy hao nhanh (Decay)
-        if decay >= 1.05:
+        # 4. Tỷ lệ dải cao HF (>1200Hz)
+        if hf >= 0.25:
+            score += 0.20
+        elif hf >= 0.15:
+            score += 0.10
+        elif hf < 0.08:
+            score -= 0.15  # Tiếng đóng cửa trầm đục, tiếng dậm chân
+
+        # 5. Tắt âm nhanh (Decay)
+        if decay >= 1.25:
             score += 0.15
+        elif decay < 1.05:
+            score -= 0.15  # Tiếng nói ngân dài không suy hao
 
-        # 5. Biên độ lớn
-        if peak >= 0.030:
-            score += 0.10
+        # 6. Độ phẳng phổ (Broadband Noise)
+        if flatness < 0.08:
+            score -= 0.20  # Tiếng còi, tiếng rít kim loại
 
         return float(np.clip(score, 0.0, 1.0))
 
@@ -172,7 +181,7 @@ class ClapClassifier:
         confidence_thresh: Optional[float] = None
     ) -> Tuple[bool, float, Dict[str, Any]]:
         """
-        Dự đoán thời gian thực kết hợp AI + Acoustic Physics (Multi-Evidence Ensemble).
+        Dự đoán thời gian thực yêu cầu đồng thuận giữa ML và Vật lý Âm học.
         """
         with self.lock:
             cnn_ref = self.cnn_model
@@ -210,11 +219,14 @@ class ClapClassifier:
         acoustic_score = self.compute_acoustic_score(dsp_metrics)
         details["acoustic_score"] = round(acoustic_score, 4)
 
-        # 4. Tổng hợp điểm tự tin (Hybrid Multi-Evidence Ensemble)
+        # 4. Tổng hợp điểm tự tin (Ensemble Consensus)
+        # Chỉ khi cả 2 nguồn cùng xác nhận thì mới có điểm cao
         if conf_scores:
-            ml_max = float(np.max(conf_scores))
-            # Kết hợp thông minh giữa ML và Acoustic Physics:
-            final_confidence = float(max(ml_max, acoustic_score, 0.4 * ml_max + 0.6 * acoustic_score))
+            ml_score = float(np.mean(conf_scores))
+            if ml_score < 0.20 or acoustic_score < 0.20:
+                final_confidence = min(ml_score, acoustic_score) * 0.5
+            else:
+                final_confidence = 0.55 * ml_score + 0.45 * acoustic_score
         else:
             final_confidence = acoustic_score
             details["rule_fallback"] = True
