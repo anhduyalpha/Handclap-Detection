@@ -130,9 +130,14 @@ class LiveDetectionEngine:
         recent_history = self.ring_buffer.get_recent(history_samples)
 
         # 2. Stage 1: DSP Transient Envelope Validator với Ngưỡng Động
-        energy_thresh = self.noise_estimator.dynamic_energy_thresh if settings.adaptive_noise.enabled else settings.dsp.energy_threshold
-        crest_thresh = self.noise_estimator.dynamic_crest_thresh if settings.adaptive_noise.enabled else settings.dsp.crest_factor_min
-        confidence_thresh = self.noise_estimator.dynamic_confidence_thresh if settings.adaptive_noise.enabled else settings.ml.confidence_threshold
+        if settings.adaptive_noise.enabled:
+            energy_thresh = self.noise_estimator.dynamic_energy_thresh
+            crest_thresh = min(settings.dsp.crest_factor_min, self.noise_estimator.dynamic_crest_thresh)
+            confidence_thresh = min(settings.ml.confidence_threshold, self.noise_estimator.dynamic_confidence_thresh)
+        else:
+            energy_thresh = settings.dsp.energy_threshold
+            crest_thresh = settings.dsp.crest_factor_min
+            confidence_thresh = settings.ml.confidence_threshold
 
         is_transient, dsp_metrics = self.dsp_detector.analyze_chunk(
             chunk=clean_chunk,

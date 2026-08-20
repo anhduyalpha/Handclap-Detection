@@ -14,80 +14,83 @@ USER_PROFILES_DIR = DATA_DIR / "user_profiles"
 CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
 SETTINGS_FILE = DATA_DIR / "user_settings.json"
 
-# Đảm bảo các thư mục dữ liệu tồn tại
 for directory in [DATA_DIR, DEFAULT_SAMPLES_DIR, USER_PROFILES_DIR, CHECKPOINTS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 class AudioConfig(BaseModel):
     sample_rate: int = 16000
     chunk_size: int = 512
-    buffer_duration_sec: float = 1.5  # Ring buffer length in seconds
-    clip_duration_sec: float = 0.25   # Window around clap for feature extraction (250ms)
+    buffer_duration_sec: float = 1.5
+    clip_duration_sec: float = 0.25
     n_mels: int = 40
     n_fft: int = 512
-    hop_length: int = 160             # 10ms hop
+    hop_length: int = 160
     n_mfcc: int = 20
 
 class DSPConfig(BaseModel):
-    # Stage 1: Transient & Peak detection (Mức Tiêu Chuẩn Cân Bằng)
-    energy_threshold: float = 0.025   # Ngưỡng năng lượng tiêu chuẩn (loại bỏ tiếng ồn nền, tiếng nói nhỏ)
-    crest_factor_min: float = 2.2     # Tỉ lệ đỉnh / RMS (yêu cầu xung nhọn của tiếng vỗ tay)
-    hf_energy_ratio_min: float = 0.20 # Tỉ lệ năng lượng tần số cao (>1200Hz)
-    min_silence_before_ms: float = 15.0 # Khoảng lặng trước khi có xung
+    # Stage 1: Transient & Peak detection
+    energy_threshold: float = 0.018   # Ngưỡng năng lượng linh hoạt
+    crest_factor_min: float = 1.8     # Tỉ lệ đỉnh / RMS
+    hf_energy_ratio_min: float = 0.15 # Tỉ lệ năng lượng tần số cao (>1200Hz)
+    min_silence_before_ms: float = 15.0
 
 class MLConfig(BaseModel):
-    # Stage 2: AI Classifier (Ngưỡng tự tin tiêu chuẩn chống báo giả)
-    confidence_threshold: float = 0.65 # Ngưỡng xác nhận AI (0.65 = 65%)
-    model_type: str = "hybrid_ensemble"  # "cnn" | "random_forest" | "hybrid_ensemble"
+    # Stage 2: AI Classifier
+    confidence_threshold: float = 0.50 # Ngưỡng xác nhận AI (50% mặc định rất nhạy)
+    model_type: str = "hybrid_ensemble"
     active_profile: str = "default"
 
 class SensitivityPresets:
     PRESETS = {
-        "balanced": {
-            "name": "Tiêu Chuẩn (Khuyên Dùng - Phòng 1.5-3m)",
-            "energy_threshold": 0.025,
-            "crest_factor_min": 2.2,
-            "confidence_threshold": 0.65,
-            "hf_energy_ratio_min": 0.20
-        },
         "high_sensitivity": {
-            "name": "Độ Nhạy Cao (Vỗ nhẹ / Ở xa 3-5m)",
-            "energy_threshold": 0.015,
-            "crest_factor_min": 1.7,
+            "name": "⚡ Siêu Nhạy (Ở xa 3-5m / Vỗ nhẹ)",
+            "energy_threshold": 0.012,
+            "crest_factor_min": 1.5,
+            "confidence_threshold": 0.40,
+            "hf_energy_ratio_min": 0.12,
+            "margin_factor": 1.15,
+            "max_inter_clap_ms": 800
+        },
+        "balanced": {
+            "name": "⚖️ Cân Bằng (Phòng 1.5-3m / Tiêu chuẩn)",
+            "energy_threshold": 0.020,
+            "crest_factor_min": 1.8,
             "confidence_threshold": 0.50,
-            "hf_energy_ratio_min": 0.15
+            "hf_energy_ratio_min": 0.16,
+            "margin_factor": 1.30,
+            "max_inter_clap_ms": 750
         },
         "strict_anti_noise": {
-            "name": "Chống Nhiễu Tuyệt Đối (Phòng rất ồn)",
-            "energy_threshold": 0.045,
-            "crest_factor_min": 2.8,
-            "confidence_threshold": 0.75,
-            "hf_energy_ratio_min": 0.28
+            "name": "🛡️ Chống Nhiễu Cao (Phòng nhiều tạp âm)",
+            "energy_threshold": 0.040,
+            "crest_factor_min": 2.5,
+            "confidence_threshold": 0.70,
+            "hf_energy_ratio_min": 0.25,
+            "margin_factor": 1.60,
+            "max_inter_clap_ms": 650
         }
     }
 
 class PatternConfig(BaseModel):
-    # Nhận diện chuỗi 2 tiếng vỗ tay tức thời (Instant Double Clap)
-    min_inter_clap_ms: int = 120       # Khoảng cách tối thiểu giữa 2 cú vỗ
-    max_inter_clap_ms: int = 700       # Cửa sổ tối đa giữa 2 cú vỗ (700ms chuẩn sinh học)
-    cooldown_ms: int = 400             # Thời gian nghỉ sau khi thực thi hành động
+    min_inter_clap_ms: int = 100
+    max_inter_clap_ms: int = 750
+    cooldown_ms: int = 350
 
 class SmartLightConfig(BaseModel):
     power: bool = True
-    brightness: int = 80               # 0 - 100
-    color: str = "#00e5ff"             # Hex color (Cyan neon default)
-    mode: str = "solid"                # "solid" | "rainbow" | "pulse" | "party"
-    double_clap_action: str = "toggle_power"   # 2 tiếng vỗ liên tiếp (Double Clap) -> Bật/Tắt Đèn
-    # Mặc định cấu hình sẵn Webhook Home Assistant của bạn
+    brightness: int = 80
+    color: str = "#00e5ff"
+    mode: str = "solid"
+    double_clap_action: str = "toggle_power"
     webhook_url: str = os.getenv("WEBHOOK_URL", "http://192.168.2.171:8123/api/webhook/vo_tay_toggle_den")
 
 class AdaptiveNoiseConfig(BaseModel):
-    enabled: bool = True                  # Bật/tắt tự động căn chỉnh độ ồn nền liên tục
-    adaptation_speed: float = 0.05        # Tốc độ cập nhật EMA (alpha)
-    margin_factor: float = 1.40           # Hệ số an toàn
-    min_energy_threshold: float = 0.020   # Ngưỡng tối thiểu khi phòng yên tĩnh
-    max_energy_threshold: float = 0.080   # Ngưỡng tối đa khi phòng ồn
-    transient_rejection_ratio: float = 2.5 # Tỉ lệ peak/noise_floor để loại bỏ
+    enabled: bool = True
+    adaptation_speed: float = 0.05
+    margin_factor: float = 1.30
+    min_energy_threshold: float = 0.010
+    max_energy_threshold: float = 0.075
+    transient_rejection_ratio: float = 2.4
 
 class AppSettings(BaseModel):
     audio: AudioConfig = AudioConfig()
@@ -105,7 +108,7 @@ class AppSettings(BaseModel):
 settings = AppSettings()
 
 def load_persistent_settings():
-    """Tải cấu hình đã lưu trên đĩa (nếu có) để duy trì cấu hình qua các lần khởi động lại"""
+    """Tải cấu hình đã lưu trên đĩa để duy trì qua các lần khởi động lại"""
     if SETTINGS_FILE.exists():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -117,12 +120,18 @@ def load_persistent_settings():
                 settings.light.double_clap_action = data["double_clap_action"]
             if "energy_threshold" in data:
                 settings.dsp.energy_threshold = float(data["energy_threshold"])
+            if "crest_factor_min" in data:
+                settings.dsp.crest_factor_min = float(data["crest_factor_min"])
             if "confidence_threshold" in data:
                 settings.ml.confidence_threshold = float(data["confidence_threshold"])
             if "min_inter_clap_ms" in data:
                 settings.pattern.min_inter_clap_ms = int(data["min_inter_clap_ms"])
             if "max_inter_clap_ms" in data:
                 settings.pattern.max_inter_clap_ms = int(data["max_inter_clap_ms"])
+            if "margin_factor" in data:
+                settings.adaptive_noise.margin_factor = float(data["margin_factor"])
+            if "adaptive_noise_enabled" in data:
+                settings.adaptive_noise.enabled = bool(data["adaptive_noise_enabled"])
             if "windows_studio_url" in data and data["windows_studio_url"]:
                 settings.windows_studio_url = data["windows_studio_url"]
             if "linux_server_url" in data and data["linux_server_url"]:
@@ -132,19 +141,21 @@ def load_persistent_settings():
             logger.warning(f"Error loading persistent settings: {e}")
 
 def save_persistent_settings():
-    """Lưu cấu hình hiện tại ra file JSON trên đĩa để không bao giờ bị mất"""
+    """Lưu cấu hình hiện tại ra file JSON trên đĩa"""
     try:
         data = {
             "webhook_url": settings.light.webhook_url,
             "double_clap_action": settings.light.double_clap_action,
             "energy_threshold": settings.dsp.energy_threshold,
+            "crest_factor_min": settings.dsp.crest_factor_min,
             "confidence_threshold": settings.ml.confidence_threshold,
             "min_inter_clap_ms": settings.pattern.min_inter_clap_ms,
             "max_inter_clap_ms": settings.pattern.max_inter_clap_ms,
+            "margin_factor": settings.adaptive_noise.margin_factor,
+            "adaptive_noise_enabled": settings.adaptive_noise.enabled,
             "windows_studio_url": settings.windows_studio_url,
             "linux_server_url": settings.linux_server_url,
-            "auto_collect_true_claps": settings.auto_collect_true_claps,
-            "adaptive_noise_enabled": settings.adaptive_noise.enabled
+            "auto_collect_true_claps": settings.auto_collect_true_claps
         }
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
