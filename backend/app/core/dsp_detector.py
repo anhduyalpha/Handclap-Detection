@@ -8,7 +8,7 @@ logger = logging.getLogger("handclap.dsp")
 class DSPTransientDetector:
     """
     Stage 1: Bộ phát hiện xung âm thanh năng lượng cao & Transient Trigger thời gian thực.
-    Cân chỉnh độ nhạy tiêu chuẩn (Balanced Sensitivity): Loại bỏ tiếng nói chuyện, tiếng bấm bàn phím, chỉ kích hoạt khi có tiếng vỗ tay thật.
+    Thiết kế High-Recall Ultra-Responsive: Bắt trọn vẹn mọi tiếng vỗ tay dù nhẹ hay xa (3-5m) và chuyển cho Stage 2 phân loại.
     """
     def __init__(self, sample_rate: int = 16000, chunk_size: int = 512):
         self.sample_rate = sample_rate
@@ -30,9 +30,9 @@ class DSPTransientDetector:
         self, 
         chunk: np.ndarray, 
         recent_history: np.ndarray,
-        energy_thresh: float = 0.025,
-        crest_thresh: float = 2.2,
-        hf_ratio_thresh: float = 0.20
+        energy_thresh: float = 0.015,
+        crest_thresh: float = 1.6,
+        hf_ratio_thresh: float = 0.12
     ) -> Tuple[bool, Dict[str, Any]]:
         """
         Phân tích chunk hiện tại để xác định có xung âm thanh đột biến hay không.
@@ -109,11 +109,12 @@ class DSPTransientDetector:
             "spectral_flatness": round(spectral_flatness, 3)
         }
 
-        # 7. Điều kiện Stage 1 Transient Trigger (Mức Tiêu Chuẩn):
-        # Yêu cầu năng lượng rõ ràng VÀ (có đỉnh xung sắc nét kèm dải cao hoặc onset bùng nổ)
+        # 7. Điều kiện Stage 1 Transient Trigger (High-Recall):
+        # Mọi xung âm thanh có năng lượng vượt ngưỡng VÀ có tính chất xung (crest >= 1.3 HOẶC onset >= 1.15 HOẶC peak >= 0.020)
+        # đều ĐƯỢC CHUYỂN NGAY cho Stage 2 để tính toán điểm số!
         is_candidate = bool(
             (peak_amp >= energy_thresh) and 
-            (crest_factor >= crest_thresh and (hf_ratio >= hf_ratio_thresh or onset_ratio >= 1.5 or peak_amp >= 0.040))
+            (crest_factor >= crest_thresh or onset_ratio >= 1.15 or peak_amp >= 0.020)
         )
 
         return is_candidate, metrics

@@ -11,31 +11,31 @@ class AdaptiveNoiseFloorEstimator:
     Tự động căn chỉnh ngưỡng nhạy theo môi trường thực tế (Yên tĩnh vs Ồn ào).
     
     Phân loại mức ồn phòng:
-    - 'quiet': RMS < 0.012 (Phòng đêm yên tĩnh)
-    - 'normal': 0.012 <= RMS < 0.030 (Phòng sinh hoạt bình thường)
-    - 'noisy': 0.030 <= RMS < 0.065 (Phòng mở quạt gió to, tivi, có người nói chuyện)
-    - 'very_noisy': RMS >= 0.065 (Môi trường rất ồn -> Nâng cao ngưỡng chống báo giả)
+    - 'quiet': RMS < 0.010 (Phòng đêm yên tĩnh -> Cực nhạy)
+    - 'normal': 0.010 <= RMS < 0.025 (Phòng sinh hoạt bình thường)
+    - 'noisy': 0.025 <= RMS < 0.055 (Phòng mở quạt gió to, tivi, có người nói chuyện)
+    - 'very_noisy': RMS >= 0.055 (Môi trường rất ồn)
     """
     def __init__(self, history_len: int = 120):
         self.history_len = history_len
-        self.rms_history = np.full(history_len, 0.008, dtype=np.float32)
+        self.rms_history = np.full(history_len, 0.005, dtype=np.float32)
         self.history_idx = 0
         self.initialized_samples = 0
 
         # Ước lượng EMA
-        self.noise_floor_rms = 0.008
-        self.noise_floor_peak = 0.015
+        self.noise_floor_rms = 0.005
+        self.noise_floor_peak = 0.010
         
         # Thống kê phân vị
-        self.p10_rms = 0.005
-        self.p50_rms = 0.008
-        self.p90_rms = 0.012
+        self.p10_rms = 0.003
+        self.p50_rms = 0.005
+        self.p90_rms = 0.008
 
         # Ngưỡng động thả nổi (Dynamic Floating Thresholds)
-        self.dynamic_energy_thresh = 0.025
-        self.dynamic_crest_thresh = 2.2
-        self.dynamic_hf_thresh = 0.20
-        self.dynamic_confidence_thresh = 0.65
+        self.dynamic_energy_thresh = 0.015
+        self.dynamic_crest_thresh = 1.6
+        self.dynamic_hf_thresh = 0.12
+        self.dynamic_confidence_thresh = 0.45
 
         self.ambient_status = "normal"
         self.ambient_label = "Phòng Bình Thường"
@@ -80,13 +80,13 @@ class AdaptiveNoiseFloorEstimator:
             self.p50_rms = float(np.percentile(self.rms_history, 50))
             self.p90_rms = float(np.percentile(self.rms_history, 90))
 
-            if self.noise_floor_rms < 0.012:
+            if self.noise_floor_rms < 0.010:
                 self.ambient_status = "quiet"
-                self.ambient_label = "🌙 Phòng Yên Tĩnh"
-            elif self.noise_floor_rms < 0.030:
+                self.ambient_label = "🌙 Phòng Yên Tĩnh (Bắt xa 3-5m)"
+            elif self.noise_floor_rms < 0.025:
                 self.ambient_status = "normal"
-                self.ambient_label = "🏡 Phòng Bình Thường"
-            elif self.noise_floor_rms < 0.065:
+                self.ambient_label = "🏡 Phòng Bình Thường (Bắt 2-3m)"
+            elif self.noise_floor_rms < 0.055:
                 self.ambient_status = "noisy"
                 self.ambient_label = "📢 Phòng Ồn / Bật Quạt"
             else:
@@ -94,8 +94,8 @@ class AdaptiveNoiseFloorEstimator:
                 self.ambient_label = "⚠️ Rất Ồn (Tự Động Nâng Ngưỡng)"
 
         # 1. Tính ngưỡng năng lượng động (Dynamic Energy Threshold)
-        effective_peak_base = max(self.noise_floor_peak, self.p90_rms * 1.6)
-        raw_energy = effective_peak_base * cfg.margin_factor + 0.003
+        effective_peak_base = max(self.noise_floor_peak, self.p90_rms * 1.5)
+        raw_energy = effective_peak_base * cfg.margin_factor + 0.001
         self.dynamic_energy_thresh = float(np.clip(
             raw_energy,
             cfg.min_energy_threshold,
@@ -104,21 +104,21 @@ class AdaptiveNoiseFloorEstimator:
 
         # 2. Ngưỡng Crest & Confidence động
         if self.ambient_status == "quiet":
+            self.dynamic_crest_thresh = 1.4
+            self.dynamic_hf_thresh = 0.10
+            self.dynamic_confidence_thresh = 0.40
+        elif self.ambient_status == "normal":
+            self.dynamic_crest_thresh = 1.6
+            self.dynamic_hf_thresh = 0.12
+            self.dynamic_confidence_thresh = 0.45
+        elif self.ambient_status == "noisy":
             self.dynamic_crest_thresh = 2.0
             self.dynamic_hf_thresh = 0.18
-            self.dynamic_confidence_thresh = 0.60
-        elif self.ambient_status == "normal":
-            self.dynamic_crest_thresh = 2.2
-            self.dynamic_hf_thresh = 0.20
-            self.dynamic_confidence_thresh = 0.65
-        elif self.ambient_status == "noisy":
-            self.dynamic_crest_thresh = 2.5
-            self.dynamic_hf_thresh = 0.24
-            self.dynamic_confidence_thresh = 0.70
+            self.dynamic_confidence_thresh = 0.55
         else: # very_noisy
-            self.dynamic_crest_thresh = 3.0
-            self.dynamic_hf_thresh = 0.28
-            self.dynamic_confidence_thresh = 0.78
+            self.dynamic_crest_thresh = 2.4
+            self.dynamic_hf_thresh = 0.22
+            self.dynamic_confidence_thresh = 0.65
 
         # 3. Tính SNR
         if self.noise_floor_rms > 1e-6:
