@@ -1,0 +1,14 @@
+{
+  "webhook_url": "http://192.168.2.171:8123/api/webhook/vo_tay_toggle_den",
+  "double_clap_action": "toggle_power",
+  "energy_threshold": 0.022,
+  "crest_factor_min": 2.0,
+  "confidence_threshold": 0.6,
+  "min_inter_clap_ms": 120,
+  "max_inter_clap_ms": 700,
+  "margin_factor": 1.35,
+  "adaptive_noise_enabled": true,
+  "windows_studio_url": "http://127.0.0.1:8001",
+  "linux_server_url": "http://127.0.0.1:8000",
+  "auto_collect_true_claps": true
+}
