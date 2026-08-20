@@ -72,7 +72,6 @@ class ServerMicrophoneStreamer:
         if self.is_running:
             return
         
-        self._optimize_linux_alsa_gain()
         self.is_running = True
         self.last_chunk_time = time.time()
         

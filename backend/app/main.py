@@ -9,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, CHECKPOINTS_DIR, settings
 from .api import ws_audio, routes_training, routes_devices, routes_events
-from .training.trainer import PersonalModelTrainer
 from .core.live_engine import live_engine
 from .core.server_mic import server_mic
 from .core.executor import io_executor
@@ -29,11 +28,12 @@ async def lifespan(app: FastAPI):
     ws_audio.manager.set_loop(loop)
     logger.info("FastAPI Event Loop successfully bound to WebSocket Connection Manager.")
 
-    # 2. Check and initialize default model if missing
+    # 2. Check and initialize default model if missing (Lazy training)
     default_ckpt = CHECKPOINTS_DIR / "default"
     if not (default_ckpt / "model_sklearn.joblib").exists() and not (default_ckpt / "model_cnn.pt").exists():
         logger.info("Initializing default seed model checkpoint...")
         try:
+            from .training.trainer import PersonalModelTrainer
             trainer = PersonalModelTrainer(sample_rate=settings.audio.sample_rate)
             meta = trainer.train_profile(profile_name="default", augment_factor=10, cnn_epochs=15)
             logger.info(f"Default model trained successfully (Accuracy: {meta.get('accuracy', 0)}%)")
